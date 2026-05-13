@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>대한민국 법령 통합 검색</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --navy:#0B1628; --navy-mid:#132040; --navy-light:#1E3054;
+    --gold:#D4A843; --gold-light:#F0C96B; --gold-dim:rgba(212,168,67,0.15);
+    --text-primary:#F0EDE8; --text-secondary:#9BA8BC; --text-dim:#5A6478;
+    --border:rgba(212,168,67,0.25); --border-dim:rgba(255,255,255,0.07);
+    --green:#4CAF82; --green-dim:rgba(76,175,130,0.12);
+    --fire:#FF6B35; --fire-dim:rgba(255,107,53,0.15); --fire-border:rgba(255,107,53,0.35);
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--navy);color:var(--text-primary);font-family:'Noto Sans KR',sans-serif;min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 40% at 80% 10%,rgba(212,168,67,0.06) 0%,transparent 60%),radial-gradient(ellipse 40% 60% at 10% 80%,rgba(30,48,84,0.8) 0%,transparent 70%);pointer-events:none;z-index:0;}
+
+  .wrap{max-width:860px;margin:0 auto;padding:36px 18px 80px;position:relative;z-index:1;}
+
+  /* Header */
+  .header{text-align:center;margin-bottom:32px;padding-bottom:26px;border-bottom:1px solid var(--border);}
+  .header-badge{display:inline-flex;align-items:center;gap:6px;background:var(--gold-dim);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--gold);text-transform:uppercase;margin-bottom:13px;}
+  .header h1{font-size:clamp(20px,5vw,30px);font-weight:900;letter-spacing:-0.5px;margin-bottom:7px;}
+  .header h1 span{color:var(--gold);}
+  .header p{color:var(--text-secondary);font-size:13px;line-height:1.6;}
+  .auto-badge{display:inline-flex;align-items:center;gap:5px;background:var(--green-dim);border:1px solid rgba(76,175,130,0.3);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--green);margin-top:8px;font-weight:600;}
+
+  /* Search */
+  .search-box{background:var(--navy-mid);border:1px solid var(--border);border-radius:16px;padding:22px;margin-bottom:22px;position:relative;overflow:hidden;}
+  .search-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);}
+  .s-label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+  .s-label::before{content:'';width:4px;height:13px;background:var(--gold);border-radius:2px;}
+  .s-row{display:flex;gap:9px;}
+  .s-input{flex:1;background:rgba(11,22,40,0.7);border:1px solid var(--border-dim);border-radius:10px;padding:13px 15px;color:var(--text-primary);font-family:'Noto Sans KR',sans-serif;font-size:14px;outline:none;transition:border-color .2s;}
+  .s-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,0.08);}
+  .s-input::placeholder{color:var(--text-dim);}
+  .s-btn{padding:13px 20px;background:var(--gold);color:var(--navy);border:none;border-radius:10px;font-family:'Noto Sans KR',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap;}
+  .s-btn:hover:not(:disabled){background:var(--gold-light);transform:translateY(-1px);}
+  .s-btn:disabled{opacity:.6;cursor:not-allowed;}
+
+  .chips{margin-top:11px;display:flex;flex-wrap:wrap;gap:7px;}
+  .chip{background:rgba(255,255,255,.04);border:1px solid var(--border-dim);border-radius:20px;padding:4px 11px;font-size:12px;color:var(--text-secondary);cursor:pointer;transition:all .2s;white-space:nowrap;}
+  .chip.fire{border-color:var(--fire-border);color:#FFB08A;}
+  .chip:hover{background:var(--gold-dim);border-color:var(--border);color:var(--gold-light);}
+  .chip.fire:hover{background:var(--fire-dim);border-color:var(--fire-border);color:var(--fire);}
+
+  /* Progress */
+  .prog{width:100%;height:3px;background:var(--navy-light);border-radius:3px;margin-top:13px;overflow:hidden;display:none;}
+  .prog.on{display:block;}
+  .prog-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));animation:progAnim 1.4s ease-in-out infinite;}
+  @keyframes progAnim{0%{width:0;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0;margin-left:100%}}
+  .prog-txt{text-align:center;color:var(--text-secondary);font-size:12px;margin-top:7px;display:none;animation:pulse 1.4s ease-in-out infinite;}
+  .prog-txt.on{display:block;}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+
+  .err{background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.3);border-radius:10px;padding:13px;color:#F08080;font-size:13px;margin-top:13px;display:none;line-height:1.6;}
+  .err.on{display:block;}
+
+  /* Results */
+  .results{display:none;}
+  .results.on{display:block;animation:fadeUp .4s ease;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+
+  .res-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
+  .res-title{font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--gold);}
+  .res-badges{display:flex;gap:7px;flex-wrap:wrap;}
+  .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+  .badge-gold{background:var(--gold-dim);border:1px solid var(--border);color:var(--gold);}
+  .badge-fire{background:var(--fire-dim);border:1px solid var(--fire-border);color:var(--fire);display:none;}
+  .badge-live{background:var(--green-dim);border:1px solid rgba(76,175,130,0.3);color:var(--green);}
+
+  .grp-label{display:flex;align-items:center;gap:9px;margin:16px 0 9px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+  .grp-label.fire{color:var(--fire);}
+  .grp-label.gen{color:var(--text-secondary);}
+  .grp-label::after{content:'';flex:1;height:1px;background:currentColor;opacity:.2;}
+
+  /* Card */
+  .card{background:var(--navy-mid);border:1px solid var(--border-dim);border-radius:14px;margin-bottom:11px;overflow:hidden;transition:all .2s;}
+  .card:hover{border-color:rgba(212,168,67,.35);transform:translateY(-1px);}
+  .card.fire{border-color:var(--fire-border);}
+  .card.fire:hover{border-color:var(--fire);box-shadow:0 4px 16px rgba(255,107,53,.1);}
+
+  .card-top{padding:15px 17px;display:flex;align-items:flex-start;gap:11px;}
+  .card-idx{min-width:33px;height:33px;background:var(--gold-dim);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
+  .card.fire .card-idx{background:var(--fire-dim);border-color:var(--fire-border);color:var(--fire);}
+
+  .card-info{flex:1;min-width:0;}
+  .card-name-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;}
+  .card-name{font-size:15px;font-weight:700;color:var(--text-primary);}
+  .fire-tag{background:var(--fire-dim);border:1px solid var(--fire-border);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;color:var(--fire);white-space:nowrap;}
+
+  .card-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .meta-tag{background:rgba(255,255,255,.04);border:1px solid var(--border-dim);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text-dim);}
+
+  .card-btns{display:flex;gap:7px;flex-wrap:wrap;}
+  .btn-o{display:inline-flex;align-items:center;gap:5px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;padding:7px 13px;font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;white-space:nowrap;}
+  .btn-o:hover{background:var(--gold-light);}
+  .card.fire .btn-o{background:var(--fire);color:#fff;}
+  .card.fire .btn-o:hover{background:#ff8155;}
+
+  /* Articles */
+  .arts{border-top:1px solid var(--border-dim);padding:13px 17px 15px;}
+  .arts-title{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-dim);margin-bottom:9px;display:flex;align-items:center;gap:7px;}
+  .arts-live{background:var(--green-dim);border:1px solid rgba(76,175,130,.3);color:var(--green);border-radius:9px;padding:1px 7px;font-size:10px;}
+  .art-item{background:rgba(11,22,40,.5);border:1px solid var(--border-dim);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:11px 13px;margin-bottom:7px;}
+  .card.fire .art-item{border-left-color:var(--fire);}
+  .art-num{font-size:12px;font-weight:700;color:var(--gold-light);margin-bottom:4px;font-family:'JetBrains Mono',monospace;}
+  .card.fire .art-num{color:#FFB08A;}
+  .art-text{font-size:13px;color:var(--text-secondary);line-height:1.7;}
+  .art-more{font-size:11px;color:var(--text-dim);margin-top:4px;}
+  .art-loading{font-size:12px;color:var(--text-dim);padding:8px 0;animation:pulse 1.4s infinite;}
+  .art-error{font-size:12px;color:#F08080;padding:6px 0;line-height:1.6;}
+
+  /* Summary */
+  .sum{background:var(--green-dim);border:1px solid rgba(76,175,130,.25);border-radius:10px;padding:12px 15px;margin-bottom:13px;font-size:13px;color:#7FCFAA;line-height:1.6;}
+  .sum strong{color:var(--green);font-weight:700;display:block;margin-bottom:2px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;}
+  .no-result{text-align:center;padding:36px 20px;color:var(--text-dim);font-size:14px;line-height:1.8;}
+
+  /* Lawgo */
+  .lawgo{background:rgba(30,48,84,.6);border:1px solid var(--border);border-radius:12px;padding:14px 17px;margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:11px;flex-wrap:wrap;}
+  .lawgo-txt{font-size:13px;color:var(--text-secondary);line-height:1.5;}
+  .lawgo-txt strong{color:var(--text-primary);display:block;margin-bottom:2px;}
+  .lawgo-btn{display:inline-flex;align-items:center;gap:5px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;padding:8px 15px;font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .2s;}
+  .lawgo-btn:hover{background:var(--gold-light);}
+
+  .footer{text-align:center;margin-top:26px;padding-top:18px;border-top:1px solid var(--border-dim);font-size:12px;color:var(--text-dim);line-height:1.6;}
+  .footer a{color:var(--gold);text-decoration:none;}
+
+  @media(max-width:580px){
+    .wrap{padding:20px 13px 60px;}
+    .s-row{flex-direction:column;}
+    .s-btn{width:100%;justify-content:center;display:flex;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="header-badge">⚖️ 법령 통합 검색</div>
+    <h1>대한민국 <span>법령 통합 검색</span></h1>
+    <p>소방 관련 법령 우선 표시 · 법제처 원문 조문 2개 실시간 표시</p>
+    <div class="auto-badge">✅ 법제처 실시간 연동 — 새 법령 자동 반영</div>
+  </div>
+
+  <div class="search-box">
+    <div class="s-label">검색어 입력</div>
+    <div class="s-row">
+      <input class="s-input" id="q" type="text"
+        placeholder="예) 소방공무원 근무평정, 화재안전조사, 위험물 취급, 개인정보 보호..."/>
+      <button class="s-btn" id="sBtn" onclick="doSearch()">⚖️ 검색</button>
+    </div>
+    <div class="chips">
+      <span class="chip fire" onclick="go('소방공무원 근무평정')">🔥 소방공무원 근무평정</span>
+      <span class="chip fire" onclick="go('화재안전조사')">🔥 화재안전조사</span>
+      <span class="chip fire" onclick="go('소방시설 설치')">🔥 소방시설 설치</span>
+      <span class="chip fire" onclick="go('위험물 취급')">🔥 위험물 취급</span>
+      <span class="chip" onclick="go('개인정보 보호')">개인정보 보호</span>
+      <span class="chip" onclick="go('공무원 징계')">공무원 징계</span>
+      <span class="chip" onclick="go('근로자 연차')">근로자 연차</span>
+      <span class="chip" onclick="go('층간소음')">층간소음</span>
+      <span class="chip" onclick="go('식품위생')">식품위생</span>
+    </div>
+    <div class="prog" id="prog"><div class="prog-fill"></div></div>
+    <div class="prog-txt" id="progTxt">🔍 법제처에서 관련 법령을 검색 중...</div>
+    <div class="err" id="errBox"></div>
+  </div>
+
+  <div class="results" id="results">
+    <div class="res-hdr">
+      <div class="res-title">📋 검색 결과</div>
+      <div class="res-badges">
+        <div class="badge badge-fire" id="fireBadge">🔥 소방 <span id="fireN">0</span>건</div>
+        <div class="badge badge-gold" id="totalBadge">전체 0건</div>
+        <div class="badge badge-live">✅ 법제처 실시간</div>
+      </div>
+    </div>
+    <div id="sumBox"></div>
+    <div id="cardWrap"></div>
+    <div id="lawgoWrap"></div>
+  </div>
+
+  <div class="footer">
+    법제처 Open API 실시간 연동 · 새 법령 자동 반영 ·
+    <a href="https://www.law.go.kr" target="_blank">law.go.kr</a>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// API 호출
+// ─────────────────────────────────────────────
+async function apiSearch(query) {
+  const r = await fetch(`/api/law?action=search&query=${encodeURIComponent(query)}`);
+  if (!r.ok) throw new Error(`서버 오류 ${r.status}`);
+  return r.json();
+}
+
+async function apiArticles(mst) {
+  const r = await fetch(`/api/law?action=articles&mst=${encodeURIComponent(mst)}`);
+  if (!r.ok) throw new Error(`서버 오류 ${r.status}`);
+  return r.json();
+}
+
+// ─────────────────────────────────────────────
+// 검색
+// ─────────────────────────────────────────────
+async function doSearch() {
+  const query = document.getElementById('q').value.trim();
+  if (!query) return;
+
+  const btn = document.getElementById('sBtn');
+  btn.disabled = true;
+  document.getElementById('prog').classList.add('on');
+  document.getElementById('progTxt').classList.add('on');
+  document.getElementById('progTxt').textContent = '🔍 법제처에서 관련 법령을 검색 중...';
+  document.getElementById('errBox').classList.remove('on');
+  document.getElementById('results').classList.remove('on');
+
+  try {
+    const { laws, total } = await apiSearch(query);
+
+    if (!laws || laws.length === 0) {
+      document.getElementById('sumBox').innerHTML =
+        `<div class="no-result">🔍 "<strong>${h(query)}</strong>"에 해당하는 법령을 법제처에서 찾지 못했습니다.<br>다른 키워드로 검색해보세요.</div>`;
+      document.getElementById('cardWrap').innerHTML = '';
+      document.getElementById('lawgoWrap').innerHTML = lawgoHTML(query);
+      document.getElementById('results').classList.add('on');
+      return;
+    }
+
+    const fires = laws.filter(l => l.fire);
+    const gens  = laws.filter(l => !l.fire);
+
+    // 배지
+    document.getElementById('totalBadge').textContent = `전체 ${laws.length}건`;
+    const fb = document.getElementById('fireBadge');
+    if (fires.length) { fb.style.display='flex'; document.getElementById('fireN').textContent=fires.length; }
+    else fb.style.display='none';
+
+    // 요약
+    document.getElementById('sumBox').innerHTML = `
+      <div class="sum">
+        <strong>🎯 검색 결과</strong>
+        법제처에서 "${h(query)}" 관련 법령 ${laws.length}건을 찾았습니다.
+        ${fires.length ? `소방 관련 ${fires.length}건이 우선 표시됩니다.` : ''}
+        각 법령의 원문 조문 2개를 실시간으로 불러옵니다.
+      </div>`;
+
+    // 카드
+    let html = '';
+    if (fires.length) {
+      html += `<div class="grp-label fire">🔥 소방 관련 법령 (${fires.length}건)</div>`;
+      fires.forEach((l,i) => { html += buildCard(l, i+1); });
+    }
+    if (gens.length) {
+      const lbl = fires.length ? `📋 그 외 관련 법령 (${gens.length}건)` : `📋 관련 법령 (${gens.length}건)`;
+      html += `<div class="grp-label gen">${lbl}</div>`;
+      gens.forEach((l,i) => { html += buildCard(l, fires.length+i+1); });
+    }
+    document.getElementById('cardWrap').innerHTML = html;
+    document.getElementById('lawgoWrap').innerHTML = lawgoHTML(query);
+
+    document.getElementById('results').classList.add('on');
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+
+    // 조문 병렬 로드
+    document.getElementById('progTxt').textContent = '📄 각 법령의 조문을 불러오는 중...';
+    await Promise.allSettled(laws.map(l => loadArticles(l)));
+
+  } catch(e) {
+    const eb = document.getElementById('errBox');
+    eb.textContent = '⚠️ ' + e.message;
+    eb.classList.add('on');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('prog').classList.remove('on');
+    document.getElementById('progTxt').classList.remove('on');
+  }
+}
+
+// ─────────────────────────────────────────────
+// 조문 로드
+// ─────────────────────────────────────────────
+async function loadArticles(law) {
+  const el = document.getElementById('arts_' + law.mst);
+  if (!el) return;
+
+  try {
+    const { articles, lawName, error } = await apiArticles(law.mst);
+    if (error) throw new Error(error);
+    if (!articles || articles.length === 0) throw new Error('조문을 찾을 수 없습니다.');
+
+    let html = '';
+    for (const a of articles) {
+      const isTrunc = a.content.length >= 300;
+      html += `
+        <div class="art-item">
+          <div class="art-num">제${h(a.num)}조${a.title ? ` (${h(a.title)})` : ''}</div>
+          <div class="art-text">${h(a.content)}${isTrunc ? '…' : ''}</div>
+          ${isTrunc ? `<div class="art-more">전체 내용은 법제처 원문에서 확인하세요.</div>` : ''}
+        </div>`;
+    }
+    el.innerHTML = html;
+
+  } catch(e) {
+    el.innerHTML = `<div class="art-error">⚠️ 조문 로딩 실패: ${h(e.message)}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 카드 빌더
+// ─────────────────────────────────────────────
+function buildCard(law, idx) {
+  const lawUrl = `https://www.law.go.kr/lsSc.do?menuId=1&subMenuId=15&tabMenuId=81&query=${encodeURIComponent(law.name)}`;
+  const effFmt = law.effDate ? law.effDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3') : '';
+
+  return `
+  <div class="card ${law.fire?'fire':''}" id="card_${law.mst}">
+    <div class="card-top">
+      <div class="card-idx">${String(idx).padStart(2,'0')}</div>
+      <div class="card-info">
+        <div class="card-name-row">
+          <span class="card-name">${h(law.name)}</span>
+          ${law.fire ? '<span class="fire-tag">🔥 소방 우선</span>' : ''}
+        </div>
+        <div class="card-meta">
+          ${law.kind  ? `<span class="meta-tag">📌 ${h(law.kind)}</span>` : ''}
+          ${law.dept  ? `<span class="meta-tag">🏛 ${h(law.dept)}</span>` : ''}
+          ${effFmt    ? `<span class="meta-tag">📅 시행 ${h(effFmt)}</span>` : ''}
+        </div>
+        <div class="card-btns">
+          <a class="btn-o" href="${lawUrl}" target="_blank">🔗 법제처 원문 →</a>
+        </div>
+      </div>
+    </div>
+    <div class="arts">
+      <div class="arts-title">📄 법제처 원문 조문 <span class="arts-live">실시간 · 2개</span></div>
+      <div id="arts_${law.mst}"><div class="art-loading">⏳ 조문을 불러오는 중...</div></div>
+    </div>
+  </div>`;
+}
+
+function lawgoHTML(query) {
+  return `
+    <div class="lawgo">
+      <div class="lawgo-txt">
+        <strong>🔍 법제처 전체 검색</strong>
+        "${h(query)}" 관련 모든 법령을 법제처에서 직접 검색합니다.
+      </div>
+      <a class="lawgo-btn" href="https://www.law.go.kr/lsSc.do?menuId=1&subMenuId=15&tabMenuId=81&query=${encodeURIComponent(query)}" target="_blank">법제처 검색 →</a>
+    </div>`;
+}
+
+function go(text) {
+  document.getElementById('q').value = text;
+  doSearch();
+}
+
+function h(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+</script>
+</body>
+</html>
