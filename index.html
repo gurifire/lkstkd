@@ -344,47 +344,31 @@ function signupDemo(e){e.preventDefault();let f=new FormData(e.target),type=f.ge
 function loginDemo(){alert('테스트 계정 로그인은 비활성화되었습니다.');}
 async function logoutDemo(){cloudReady=false;if(cloudUnsub){cloudUnsub();cloudUnsub=null;}await firebase.auth().signOut();}
 function addSibling(){if(role!=='parent')return;modal(`<h2>자녀 추가 연결</h2><p class="muted">관장이 발급한 미사용 초대 코드를 입력하세요.</p><form onsubmit="linkSibling(event)"><input class="field" name="code" required placeholder="자녀 연결 코드"><button class="btn" style="margin-top:12px">연결</button></form>`)}function linkSibling(e){e.preventDefault();let code=String(new FormData(e.target).get('code')).trim(),i=db.invites.find(x=>x.code===code&&!x.used);if(!i||!student(i.sid))return toast('유효하지 않은 코드입니다.');let ids=linkedIdsOf(currentAccount);if(!ids.includes(i.sid))ids.push(i.sid);currentAccount.childIds=ids;currentAccount.sid=ids[0];i.used=true;student(i.sid).linked=true;save();saveAccounts();selectedChildId=i.sid;closeModal();render();toast('자녀 추가 연결 완료')}function chooseChild(id){let n=Number(id);if(!linkedChildren().includes(n))return;selectedChildId=n;render()}
-// 지원반 앱의 화면 스택 및 첫 뒤로가기 안내 방식 적용
-let tkdExitArmed=false,tkdExitTimer=0,tkdExiting=false,tkdLastPopTime=0;
-const tkdBackBaseUrl=()=>location.pathname+location.search;
-function tkdDisarmExit(){tkdExitArmed=false;clearTimeout(tkdExitTimer);}
-function tkdPushRootGuard(){
- try{history.pushState({tkdRootGuard:true},'',tkdBackBaseUrl()+(currentAccount?'#home':''));}catch(e){}
-}
-try{
- history.replaceState({...history.state,tkdRootBase:true},'',location.href);
- tkdPushRootGuard();
-}catch(e){}
+let tkdExitArmed=false,tkdExitTimer=0,tkdExiting=false;
+// Preserve normal page/modal navigation. On the root screen, warn on first back and leave on second.
+try{history.replaceState({...(history.state||{}),tkdRootBase:true},'',location.href);history.pushState({tkdRootGuard:true},'',location.href)}catch(e){}
 window.addEventListener('popstate',function(e){
  if(tkdExiting)return;
- const now=Date.now();
- // 지원반 앱과 동일하게 안드로이드의 연속 popstate 중복 처리 방지
- if(now-tkdLastPopTime<120)return;
- tkdLastPopTime=now;
+ if($('#modalhost').innerHTML){$('#modalhost').innerHTML='';return;}
  const state=e.state;
- // 모달에서 뒤로가기: 모달만 닫고 원래 화면 유지
- if($('#modalhost').innerHTML){
-  $('#modalhost').innerHTML='';tkdDisarmExit();return;
+ if(state&&state.tkdPage&&currentAccount&&state.tkdRole===role&&menus().includes(state.tkdPage)&&state.tkdPage!=='home'){
+  tkdExitArmed=false;clearTimeout(tkdExitTimer);page=state.tkdPage;search='';render();return;
  }
- // 이전 메뉴 화면으로 복귀
- if(state&&state.tkdPage&&currentAccount&&state.tkdRole===role&&menus().includes(state.tkdPage)){
-  tkdDisarmExit();page=state.tkdPage;search='';render();return;
- }
- // 하위 메뉴에서는 홈으로 복귀 (앱 종료 방지)
  if(currentAccount&&page!=='home'){
-  tkdDisarmExit();page='home';search='';render();tkdPushRootGuard();return;
+  tkdExitArmed=false;clearTimeout(tkdExitTimer);page='home';search='';render();
+  try{history.pushState({tkdRootGuard:true},'',location.pathname+location.search+'#home')}catch(e){}
+  return;
  }
- // 홈/로그인 첫 뒤로가기: 안내 후 히스토리 보호 상태 복원
- if(!tkdExitArmed){
-  tkdExitArmed=true;
-  tkdExitTimer=setTimeout(()=>{tkdExitArmed=false;},2500);
-  toast('한 번 더 뒤로가기를 누르면 앱이 종료됩니다.');
-  tkdPushRootGuard();return;
+ if(tkdExitArmed){
+  tkdExiting=true;clearTimeout(tkdExitTimer);
+  // Browsers control whether a standalone PWA closes or returns to the previous app.
+  history.back();return;
  }
- // 안내 후 두 번째 뒤로가기: 보호 상태를 다시 쌓지 않고 앱 밖으로 이동 시도
- tkdExiting=true;clearTimeout(tkdExitTimer);
- history.back();
-},true);
+ tkdExitArmed=true;clearTimeout(tkdExitTimer);
+ tkdExitTimer=setTimeout(()=>{tkdExitArmed=false},2500);
+ toast('한 번 더 뒤로가기를 누르면 앱이 종료됩니다.');
+ try{history.pushState({tkdRootGuard:true},'',location.pathname+location.search+(currentAccount?'#home':''))}catch(e){}
+});
 // 지원반 앱처럼 별도 HTML 시작화면 없이 최초 화면을 즉시 표시한다.
 showAuth();
 const firebaseConfig={apiKey:"AIzaSyDBVRXkye7tBrbjoT9uJNmVMRx3F0d_jQ",authDomain:"lkstkd-2803e.firebaseapp.com",projectId:"lkstkd-2803e",storageBucket:"lkstkd-2803e.firebasestorage.app",messagingSenderId:"1007525231750",appId:"1:1007525231750:web:a96cca6b1be4dd587b65697"};
