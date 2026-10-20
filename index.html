@@ -390,7 +390,7 @@ window.addEventListener('popstate',function(e){
 const tkdInitialDisplayAt=Date.now();
 // 별도 HTML 시작화면 없이 최초 화면을 즉시 표시한다.
 showAuth();
-const firebaseConfig={apiKey:"AIzaSyDBVRXkye7tBrbjoT9uJNmVMRx3F0d_jQ",authDomain:"lkstkd-2803e.firebaseapp.com",projectId:"lkstkd-2803e",storageBucket:"lkstkd-2803e.firebasestorage.app",messagingSenderId:"1007525231750",appId:"1:1007525231750:web:a96cca6b1be4dd587b65697"};
+const firebaseConfig={apiKey:"AIzaSyDBVRXkye7tBrbjoT9uJNmvMRMx3FOd_jQ",authDomain:"lkstkd-2803e.firebaseapp.com",projectId:"lkstkd-2803e",storageBucket:"lkstkd-2803e.firebasestorage.app",messagingSenderId:"1007525231750",appId:"1:1007525231750:web:a96cca6b1be4dd587b6507"};
 if(typeof firebase==='undefined'){showAuth();alert('Firebase SDK를 불러오지 못했습니다. 인터넷 연결을 확인하세요.');}
 else{firebase.initializeApp(firebaseConfig);firebase.auth().onAuthStateChanged(cloudOwnerSession);}
 setInterval(()=>{if(currentAccount){let was=!!db.attendanceFinalized[today()];finalizeDue();if(!was&&db.attendanceFinalized[today()])render();}},30000);
