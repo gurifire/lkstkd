@@ -1,4 +1,4 @@
-const CACHE = 'lkstkd-pwa-v1';
+const CACHE = 'lkstkd-pwa-v3';
 const STATIC = ['./icon-192.png','./icon-512.png','./manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)));
