@@ -6,7 +6,7 @@
   "start_url": "/lkstkd/",
   "scope": "/lkstkd/",
   "display": "standalone",
-  "background_color": "#f4f7fc",
+  "background_color": "#ffffff",
   "theme_color": "#13254b",
   "icons": [
     {
