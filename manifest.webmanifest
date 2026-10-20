@@ -1,0 +1,25 @@
+{
+  "id": "/lkstkd/",
+  "name": "경희 이기성 태권도 통합관리",
+  "short_name": "이기성 태권도",
+  "description": "태권도장 통합관리 웹앱",
+  "start_url": "/lkstkd/",
+  "scope": "/lkstkd/",
+  "display": "standalone",
+  "background_color": "#f4f7fc",
+  "theme_color": "#13254b",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
