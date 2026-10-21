@@ -233,13 +233,118 @@ function tkdPublishRoleViews(){
  return tkdProjectionQueue;
 }
 function tkdMemberReadOnly(){return role==='coach'||role==='parent';}
+// v7.11: 사범 변경은 별도 요청 문서에 기록하고 관장 계정에서 원본에 반영합니다.
+// 사범은 academyData/main과 회비 데이터에 대한 읽기/쓰기 권한이 없습니다.
+let tkdCoachChangesUnsub=null,tkdCoachPending=[],tkdCoachEditId=null;
+let tkdOwnerChangesUnsub=null,tkdOwnerApplyQueue=Promise.resolve();
+function tkdCoachWatchChanges(){
+ if(tkdCoachChangesUnsub){tkdCoachChangesUnsub();tkdCoachChangesUnsub=null;}
+ if(role!=='coach'||!currentAccount)return;
+ tkdCoachChangesUnsub=firebase.firestore().collection('coachChanges').where('uid','==',currentAccount.id).onSnapshot(snap=>{
+  tkdCoachPending=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  if(['home','students','attendance'].includes(page))render();
+ },err=>console.error('사범 요청 조회 실패',err));
+}
+function tkdCoachStopWatch(){
+ if(tkdCoachChangesUnsub){tkdCoachChangesUnsub();tkdCoachChangesUnsub=null;}
+ if(tkdOwnerChangesUnsub){tkdOwnerChangesUnsub();tkdOwnerChangesUnsub=null;}
+ tkdCoachPending=[];
+}
+function tkdCoachQueueLabel(){
+ const pending=tkdCoachPending.filter(x=>x.status==='pending').length;
+ const rejected=tkdCoachPending.filter(x=>x.status==='rejected').length;
+ return `<div class="notice"><span class="emoji">📝</span><div><b>사범 업무 변경 요청</b><p>반영 대기 ${pending}건${rejected?' · 처리 불가 '+rejected+'건':''}</p><p class="muted mini">변경은 서버에 접수되며 관장 계정이 로그인하면 원본에 반영됩니다. 반영 전에는 기존 조회 정보가 표시됩니다.</p></div></div>`;
+}
+async function tkdCoachSubmit(type,studentId,fields={},day='',value=''){
+ if(role!=='coach'||!currentAccount||!firebase.auth().currentUser){alert('사범 계정으로 로그인해야 합니다.');return false;}
+ const uid=firebase.auth().currentUser.uid;
+ if(uid!==currentAccount.id)return false;
+ try{
+  await firebase.firestore().collection('coachChanges').add({uid,type,studentId:Number(studentId),fields,day,value,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+  toast('변경 요청이 저장되었습니다. 관장 계정에서 반영됩니다.');return true;
+ }catch(e){console.error(e);alert('변경 요청 저장 실패: '+e.message);return false;}
+}
+function tkdCoachStudentForm(id){
+ tkdCoachEditId=id==null?null:Number(id);render();
+ const form=document.getElementById('tkdCoachStudentForm');if(form)form.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function tkdCoachSaveStudent(event){
+ event.preventDefault();
+ if(role!=='coach')return;
+ const f=new FormData(event.target),id=Number(f.get('sid'));
+ const fields={};for(const key of ['name','className','belt','guardian','phone','joined','status','note'])fields[key]=String(f.get(key)||'').trim();
+ if(!fields.name){alert('관원 이름을 입력하세요.');return;}
+ const create=id===0;
+ const sid=create?Date.now()*1000+Math.floor(Math.random()*1000):id;
+ if(!create&&!student(sid)){alert('관원을 찾을 수 없습니다.');return;}
+ const ok=await tkdCoachSubmit(create?'studentCreate':'studentUpdate',sid,fields);
+ if(ok){tkdCoachEditId=null;render();}
+}
+async function tkdCoachSaveAttendance(event){
+ event.preventDefault();if(role!=='coach')return;
+ const f=new FormData(event.target),sid=Number(f.get('sid')),day=String(f.get('day')||''),value=String(f.get('value')||'');
+ if(!student(sid)||!/^\d{4}-\d{2}-\d{2}$/.test(day)||!['present','absent','unrecorded'].includes(value)){alert('출결 입력값을 확인하세요.');return;}
+ await tkdCoachSubmit('attendance',sid,{},day,value);
+}
 function tkdCoachReadView(){
  const list=(db.students||[]).filter(x=>[x.name,x.className,x.belt].join(' ').includes(search));
- if(page==='home')return `<div class="card"><h2>사범님 업무 조회</h2><p class="muted">관원·출결 조회가 연결되었습니다. 수정·저장은 보안 검증 완료 전까지 제한됩니다.</p><div class="grid metrics">${metricLink('👥',active().length+'명','관원 조회','students')}${metricLink('📅',today(),'출결 조회','attendance')}</div></div>`;
- if(page==='students')return `<div class="card">${head('관원 조회','사범에게 허용된 기본 정보만 표시합니다.')}<input class="field" placeholder="이름·반 검색" value="${esc(search)}" oninput="search=this.value;render()"><div class="stack" style="margin-top:12px">${list.map(x=>`<div class="notice"><b>${esc(x.name)}</b><p>${esc(x.className||'')} · ${esc(x.belt||'')} · ${esc(x.status||'')}</p></div>`).join('')||'<p>검색 결과가 없습니다.</p>'}</div></div>`;
- if(page==='attendance')return `<div class="card">${head('출결 조회','조회 전용 · 저장 기능은 아직 활성화되지 않았습니다.')}<label>날짜<input class="field" type="date" value="${esc(attendanceDate)}" onchange="setAttendanceDate(this.value)"></label><div class="stack" style="margin-top:12px">${active().map(x=>`<div class="notice split"><b>${esc(x.name)}</b><span>${({present:'출석',absent:'결석',unrecorded:'미기록'})[attendanceStatus(attendanceDate,x.id)]||'미기록'}</span></div>`).join('')}</div></div>`;
+ if(page==='home')return `<div class="card"><h2>사범님 업무</h2><div class="grid metrics">${metricLink('👥',active().length+'명','관원 관리','students')}${metricLink('📅',today(),'출결 관리','attendance')}</div>${tkdCoachQueueLabel()}</div>`;
+ if(page==='students'){
+  const x=tkdCoachEditId===null?null:student(tkdCoachEditId);
+  const form=tkdCoachEditId!==null?`<div class="card" id="tkdCoachStudentForm">${head(x?'관원 정보 수정':'새 관원 등록','등록·수정은 관장 원본에 안전하게 반영됩니다.')}<form onsubmit="tkdCoachSaveStudent(event)" class="formgrid"><input type="hidden" name="sid" value="${x?x.id:0}">${[['name','이름'],['className','수련반'],['belt','띠'],['guardian','보호자 이름'],['phone','연락처'],['joined','입관일'],['status','재원 상태'],['note','성장 메모']].map(([key,label])=>`<label>${label}<input class="field" name="${key}" ${key==='name'?'required':''} maxlength="${key==='note'?500:100}" value="${esc(x?.[key]||(key==='status'?'재원':''))}" ${key==='joined'?'placeholder="YYYY-MM-DD"':''}></label>`).join('')}<div class="row"><button class="btn sm" type="submit">변경 요청 저장</button><button class="btn sm secondary" type="button" onclick="tkdCoachEditId=null;render()">취소</button></div></form></div>`:'';
+  return `<div class="card">${head('관원 관리','사범은 관원을 삭제하거나 회비를 수정할 수 없습니다.',btn('관원 등록','tkdCoachStudentForm(0)','sm'))}${tkdCoachQueueLabel()}<input class="field" placeholder="이름·반 검색" value="${esc(search)}" oninput="search=this.value;render()"><div class="stack" style="margin-top:12px">${list.map(x=>`<div class="notice split"><div><b>${esc(x.name)}</b><p>${esc(x.className||'')} · ${esc(x.belt||'')} · ${esc(x.status||'')}</p></div>${btn('수정',`tkdCoachStudentForm(${Number(x.id)})`,'sm secondary')}</div>`).join('')||'<p>검색 결과가 없습니다.</p>'}</div></div>${form}`;
+ }
+ if(page==='attendance')return `<div class="card">${head('출결 관리','날짜와 관원을 선택해 출석·결석을 기록합니다.')}${tkdCoachQueueLabel()}<label>조회 날짜<input class="field" type="date" value="${esc(attendanceDate)}" onchange="setAttendanceDate(this.value)"></label><div class="stack" style="margin-top:12px">${active().map(x=>`<div class="notice split"><b>${esc(x.name)}</b><span>${({present:'출석',absent:'결석',unrecorded:'미기록'})[attendanceStatus(attendanceDate,x.id)]||'미기록'}</span></div>`).join('')}</div><form onsubmit="tkdCoachSaveAttendance(event)" class="formgrid" style="margin-top:16px"><label>관원<select class="field" name="sid" required>${active().map(x=>`<option value="${Number(x.id)}">${esc(x.name)}</option>`).join('')}</select></label><label>출결 상태<select class="field" name="value"><option value="present">출석</option><option value="absent">결석</option><option value="unrecorded">미기록으로 변경</option></select></label><input type="hidden" name="day" value="${esc(attendanceDate)}"><button class="btn" type="submit">출결 변경 요청 저장</button></form></div>`;
  if(page==='notices')return noticesView(false);
- return `<div class="card"><h2>${esc(labels[page]||'조회')}</h2><p class="muted">해당 업무는 역할별 보안 검증 후 제공됩니다.</p></div>`;
+ return `<div class="card"><h2>${esc(labels[page]||'조회')}</h2><p class="muted">해당 업무는 관장 전용입니다.</p></div>`;
+}
+function tkdOwnerWatchChanges(){
+ if(tkdOwnerChangesUnsub){tkdOwnerChangesUnsub();tkdOwnerChangesUnsub=null;}
+ if(role!=='owner'||!cloudReady)return;
+ tkdOwnerChangesUnsub=firebase.firestore().collection('coachChanges').where('status','==','pending').onSnapshot(snap=>{
+  for(const doc of snap.docs){
+   tkdOwnerApplyQueue=tkdOwnerApplyQueue.catch(()=>{}).then(()=>tkdOwnerApplyCoachChange(doc.ref));
+  }
+ },e=>console.error('사범 변경 요청 동기화 실패',e));
+}
+async function tkdOwnerApplyCoachChange(ref){
+ if(role!=='owner'||!cloudReady)return;
+ // 기존 관장 저장 작업이 완료된 다음 원본을 트랜잭션으로 수정합니다.
+ await cloudWrite.catch(()=>{});
+ const fs=firebase.firestore(),mainRef=fs.doc('academyData/main');
+ try{
+  const result=await fs.runTransaction(async tx=>{
+   const [req,main]=await Promise.all([tx.get(ref),tx.get(mainRef)]);
+   if(!req.exists||req.data().status!=='pending')return null;
+   const c=req.data(),source=main.exists?JSON.parse(main.data().payload||'{}'):null;
+   if(!source||!Array.isArray(source.students))throw Error('관장 원본 자료가 없습니다.');
+   const index=source.students.findIndex(x=>Number(x.id)===Number(c.studentId));
+   const allowed=['name','className','belt','guardian','phone','joined','status','note'];
+   const fields={};for(const [key,val] of Object.entries(c.fields||{}))if(allowed.includes(key)&&typeof val==='string')fields[key]=val;
+   let problem='';
+   if(c.type==='studentCreate'){
+    if(index>=0)problem='관원 ID 중복';
+    else if(!fields.name)problem='이름 누락';
+    else source.students.push({id:c.studentId,att:0,total:0,level:0,mission:0,linked:false,paid:false,...fields});
+   }else if(c.type==='studentUpdate'){
+    if(index<0)problem='수정할 관원이 없습니다.';
+    else Object.assign(source.students[index],fields);
+   }else if(c.type==='attendance'){
+    if(index<0)problem='출결 대상 관원이 없습니다.';
+    else{
+     source.attendance??={};source.attendance[c.day]??={};
+     if(c.value==='unrecorded')delete source.attendance[c.day][c.studentId];
+     else source.attendance[c.day][c.studentId]=c.value==='present';
+     source.attendanceFinalized??={};delete source.attendanceFinalized[c.day];
+    }
+   }else problem='지원하지 않는 요청 유형';
+   if(problem){tx.update(ref,{status:'rejected',reason:problem,processedAt:firebase.firestore.FieldValue.serverTimestamp()});return {rejected:true};}
+   tx.set(mainRef,{payload:JSON.stringify(source),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+   tx.update(ref,{status:'applied',processedAt:firebase.firestore.FieldValue.serverTimestamp()});
+   return {applied:true};
+  });
+  if(result?.applied)console.info('사범 변경 반영 완료',ref.id);
+ }catch(e){console.error('사범 변경 반영 실패 (요청 유지)',ref.id,e);}
 }
 
 const save=()=>{
@@ -247,7 +352,7 @@ const save=()=>{
  const payload=JSON.stringify(db);cloudPending++;
  cloudWrite=cloudWrite.catch(()=>{}).then(()=>firebase.firestore().doc('academyData/main').set({payload,updatedAt:firebase.firestore.FieldValue.serverTimestamp()})).catch(err=>{console.error('Firestore 저장 실패',err);alert('클라우드 저장에 실패했습니다. 네트워크 및 권한을 확인하세요. 변경 내용은 서버에 저장되지 않았습니다.');}).finally(()=>cloudPending--);
  cloudWrite.then(()=>tkdPublishRoleViews()).catch(()=>{});
-};const student=id=>db.students.find(x=>x.id===+id);const percent=x=>Math.round(100*x.att/Math.max(1,x.total));const icon={home:'🏠',students:'👥',attendance:'📅',dues:'💳',promotions:'🏆',growth:'🌱',notices:'📣',invites:'🔗',approvals:'🛡️',stats:'📊',settings:'⚙️',missions:'⭐'};const labels={home:'오늘의 도장',students:'관원 관리',attendance:'출결 관리',dues:'회비 관리',promotions:'승급심사',growth:'성장 기록',notices:'공지사항',invites:'학부모 초대',approvals:'가입 승인 관리',stats:'운영 통계',settings:'설정',missions:'성장 미션',parentAttendance:'자녀 출석 내역',parentDues:'자녀 회비 내역',parentNews:'최근 성장 소식'};const menus=()=>role==='owner'?['home','students','attendance','dues','promotions','growth','notices','invites','approvals','stats','settings']:role==='coach'?['home','students','attendance','promotions','growth','notices']:role==='parent'?['home','growth','notices','parentAttendance','parentDues','parentNews']:['home','missions','growth','notices'];const btn=(t,fn,cls='secondary')=>`<button class="btn ${cls}" onclick="${fn}">${t}</button>`;function toast(t){$('#toasthost').innerHTML=`<div class="toast">${esc(t)}</div>`;setTimeout(()=>$('#toasthost').innerHTML='',2600)}function navigate(p){if(!menus().includes(p))return;if(page!==p)history.pushState({tkdPage:p,tkdRole:role},'','#'+p);if(page==='attendance'&&p!=='attendance')attendanceDraft={};page=p;search='';render()}function render(){finalizeDue();if(!currentAccount){showAuth();return;}document.body.classList.remove("tkd-auth-pending");document.querySelector('#currentuser').textContent=currentAccount.name+' · '+({owner:'관장',coach:'사범',parent:'학부모',student:'관원'}[role]);if(!menus().includes(page))page='home';$('#pagetitle').innerHTML=(role==='owner'&&page==='home')?'<span style="color:#1755bc">경희</span> 이기성 <span style="color:#d92838">태권도</span>':role==='parent'?(page==='parentAttendance'||page==='parentDues'?labels[page]:'우리 아이의 태권도'):role==='student'?'나의 태권도 성장':labels[page];document.querySelector('.eyebrow').innerHTML=(role==='owner'&&page==='home')?'':`<span style="color:#1755bc">경희</span> 이기성 <span style="color:#d92838">태권도</span>`;$('#nav').innerHTML=menus().filter(p=>p!=='parentAttendance'&&p!=='parentDues'&&p!=='parentNews').map(p=>`<button class="${page===p?'active':''}" onclick="navigate('${p}')">${icon[p]} &nbsp; ${labels[p]}</button>`).join('');const bm=(role==='parent'?menus().slice(0,3):menus().slice(0,5));$('#bottom').innerHTML=bm.map(p=>`<button class="${page===p?'active':''}" onclick="navigate('${p}')"><b>${icon[p]}</b>${labels[p]}</button>`).join('');$('#view').innerHTML=role==='parent'?parentView():role==='coach'?tkdCoachReadView():role==='student'?studentView():adminView();requestAnimationFrame(limitTkdLists)}db.closedDays??={};db.attendanceFinalized??={};
+};const student=id=>db.students.find(x=>x.id===+id);const percent=x=>Math.round(100*x.att/Math.max(1,x.total));const icon={home:'🏠',students:'👥',attendance:'📅',dues:'💳',promotions:'🏆',growth:'🌱',notices:'📣',invites:'🔗',approvals:'🛡️',stats:'📊',settings:'⚙️',missions:'⭐'};const labels={home:'오늘의 도장',students:'관원 관리',attendance:'출결 관리',dues:'회비 관리',promotions:'승급심사',growth:'성장 기록',notices:'공지사항',invites:'학부모 초대',approvals:'가입 승인 관리',stats:'운영 통계',settings:'설정',missions:'성장 미션',parentAttendance:'자녀 출석 내역',parentDues:'자녀 회비 내역',parentNews:'최근 성장 소식'};const menus=()=>role==='owner'?['home','students','attendance','dues','promotions','growth','notices','invites','approvals','stats','settings']:role==='coach'?['home','students','attendance','promotions','growth','notices']:role==='parent'?['home','growth','notices','parentAttendance','parentDues']:['home','missions','growth','notices'];const btn=(t,fn,cls='secondary')=>`<button class="btn ${cls}" onclick="${fn}">${t}</button>`;function toast(t){$('#toasthost').innerHTML=`<div class="toast">${esc(t)}</div>`;setTimeout(()=>$('#toasthost').innerHTML='',2600)}function navigate(p){if(!menus().includes(p))return;if(page!==p)history.pushState({tkdPage:p,tkdRole:role},'','#'+p);if(page==='attendance'&&p!=='attendance')attendanceDraft={};page=p;search='';render()}function render(){finalizeDue();if(!currentAccount){showAuth();return;}document.body.classList.remove("tkd-auth-pending");document.querySelector('#currentuser').textContent=currentAccount.name+' · '+({owner:'관장',coach:'사범',parent:'학부모',student:'관원'}[role]);if(!menus().includes(page))page='home';$('#pagetitle').innerHTML=(role==='owner'&&page==='home')?'<span style="color:#1755bc">경희</span> 이기성 <span style="color:#d92838">태권도</span>':role==='parent'?(page==='parentAttendance'||page==='parentDues'?labels[page]:'우리 아이의 태권도'):role==='student'?'나의 태권도 성장':labels[page];document.querySelector('.eyebrow').innerHTML=(role==='owner'&&page==='home')?'':`<span style="color:#1755bc">경희</span> 이기성 <span style="color:#d92838">태권도</span>`;$('#nav').innerHTML=menus().filter(p=>p!=='parentAttendance'&&p!=='parentDues'&&p!=='parentNews').map(p=>`<button class="${page===p?'active':''}" onclick="navigate('${p}')">${icon[p]} &nbsp; ${labels[p]}</button>`).join('');const bm=(role==='parent'?menus().slice(0,3):menus().slice(0,5));$('#bottom').innerHTML=bm.map(p=>`<button class="${page===p?'active':''}" onclick="navigate('${p}')"><b>${icon[p]}</b>${labels[p]}</button>`).join('');$('#view').innerHTML=role==='parent'?parentView():role==='coach'?tkdCoachReadView():role==='student'?studentView():adminView();requestAnimationFrame(limitTkdLists)}db.closedDays??={};db.attendanceFinalized??={};
 const localDate=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
 const dateObj=d=>new Date(d+'T12:00:00');
 const dateAdd=(day,n)=>{let d=dateObj(day);d.setDate(d.getDate()+n);return localDate(d)};
@@ -488,11 +593,10 @@ function parentView(){
  let x=ownChild();
  if(!x)return '<div class="card empty">연결된 자녀가 없습니다. 관장에게 초대 코드를 요청하세요.</div>';
  let chooser=linkedChildren().length>1?'<div class="card"><label>자녀 선택 <select class="field" onchange="chooseChild(this.value)">'+linkedChildren().map(id=>{let c=student(id);return c?'<option value="'+id+'" '+(id===selectedChildId?'selected':'')+'>'+esc(c.name)+'</option>':''}).join('')+'</select></label></div>':'';
- if(page==='home')return chooser+`<div class="hero"><div><h2>우리 아이의 성장 이야기 🌱</h2></div><div class="heroemoji">👨‍👩‍👦</div></div><div class="card parentcard" style="margin-bottom:15px"><div class="childicon">🥋</div><div><h2 style="margin:0">${esc(x.name)}</h2><div class="muted">${esc(x.className)} · ${esc(x.belt)}</div><span class="pill green">학부모 연결 완료</span></div></div><div class="grid metrics">${metricLink('📅',x.att+'/'+x.total,'최근 수련 출석','parentAttendance')}${metricLink('🌱',x.belt||'성장 중','우리 아이 성장 기록','growth')}${metricLink('🌱','성장 소식','최근 성장 소식','parentNews')}${metricLink('💳',paidFor(x)?'완료':'미납','회비 납부 상태','parentDues')}</div><div>${noticesView(false)}</div>`;
+ if(page==='home')return chooser+`<div class="hero"><div><h2>우리 아이의 성장 이야기 🌱</h2></div><div class="heroemoji">👨‍👩‍👦</div></div><div class="card parentcard" style="margin-bottom:15px"><div class="childicon">🥋</div><div><h2 style="margin:0">${esc(x.name)}</h2><div class="muted">${esc(x.className)} · ${esc(x.belt)}</div><span class="pill green">학부모 연결 완료</span></div></div><div class="grid metrics">${metricLink('📅',x.att+'/'+x.total,'최근 수련 출석','parentAttendance')}${metricLink('🌱',x.belt||'성장 중','우리 아이 성장 기록','growth')}${metricLink('💳',paidFor(x)?'완료':'미납','회비 납부 상태','parentDues')}${metricLink('📢','공지 확인','공지사항','notices')}</div><div>${noticesView(false)}</div>`;
  if(page==='parentAttendance')return chooser+`<div class="card">${head('📅 '+esc(x.name)+' 관원 출석 내역')}${tkdParentCalendar(x)}<div style="margin-top:15px">${btn('홈으로 돌아가기',"navigate('home')",'sm secondary')}</div></div>`;
  if(page==='parentDues')return chooser+`<div class="card">${head('💳 '+esc(x.name)+' 관원 회비 내역')}<div class="notice"><span class="emoji">💳</span><div><b>이번 달 회비: ${paidFor(x)?'납부 완료':'미납'}</b><p>회비 관련 문의는 도장에 확인해 주세요.</p></div></div><div style="margin-top:15px">${btn('홈으로 돌아가기',"navigate('home')",'sm secondary')}</div></div>`;
  if(page==='growth')return chooser+tkdParentPromotion(x);
- if(page==='parentNews')return chooser+tkdParentNews(x);
  if(page==='notices')return noticesView(false);
  return '';
 }
@@ -526,10 +630,39 @@ async function tkdRefreshApprovals(){
   const count=st=>all.filter(x=>x.status===st).length;
   const tabs=`<div class="tkd-approval-tabs">${[['pending','승인 대기'],['approved','승인'],['rejected','반려']].map(([st,label])=>`<button type="button" class="btn sm ${tkdApprovalFilter===st?'':'secondary'}" onclick="tkdSetApprovalFilter('${st}')">${label} ${count(st)}</button>`).join('')}</div>`;
   const items=all.filter(x=>x.status===tkdApprovalFilter).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-  host.innerHTML=tabs+(items.length?items.map(x=>`<div class="notice" style="margin-bottom:10px"><div><b>${esc(x.name)} · 학부모</b><p>자녀: ${esc(x.childName||'미입력')}${tkdApprovalFilter==='pending'?' · 신청 코드: '+esc(x.inviteCode||''):''}</p><p class="mini muted">${tkdApprovalFilter==='approved'?'승인 완료':tkdApprovalFilter==='rejected'?'반려 완료':'승인 대기 중'}</p>${tkdApprovalFilter==='pending'?`<div class="row">${btn('승인',`tkdApprove('${x.id}')`,'sm secondary')}${btn('반려',`tkdReject('${x.id}')`,'sm danger')}</div>`:''}</div></div>`).join(''):`<p class="muted">${tkdApprovalFilter==='pending'?'승인 대기 중인':tkdApprovalFilter==='approved'?'승인된':'반려된'} 학부모가 없습니다.</p>`);
+  host.innerHTML=tabs+(items.length?items.map(x=>`<div class="notice" style="margin-bottom:10px"><div><b>${esc(x.name)} · 학부모</b><p>자녀: ${esc(x.childName||'미입력')}${tkdApprovalFilter==='pending'?' · 신청 코드: '+esc(x.inviteCode||''):''}</p><p class="mini muted">${tkdApprovalFilter==='approved'?'승인 완료':tkdApprovalFilter==='rejected'?'반려 완료':'승인 대기 중'}</p>${tkdApprovalFilter==='pending'?`<div class="row">${btn('승인',`tkdApprove('${x.id}')`,'sm secondary')}${btn('반려',`tkdReject('${x.id}')`,'sm danger')}</div>`:tkdApprovalFilter==='approved'?`<div class="row">${btn('기기 변경·계정 복구',`tkdStartRecovery('${x.id}')`,'sm secondary')}</div>`:''}</div></div>`).join(''):`<p class="muted">${tkdApprovalFilter==='pending'?'승인 대기 중인':tkdApprovalFilter==='approved'?'승인된':'반려된'} 학부모가 없습니다.</p>`);
   const coachPending=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.role==='coach'&&x.status==='pending');
   if(coachPending.length)host.innerHTML+=`<div style="margin-top:20px"><h3>사범 가입 승인 대기 (${coachPending.length})</h3>${coachPending.map(x=>`<div class="notice" style="margin-bottom:10px"><div><b>${esc(x.name)} · 사범</b><p>신청 코드: ${esc(x.inviteCode||'')}</p><div class="row">${btn('승인',`tkdApprove('${x.id}')`,'sm secondary')}${btn('반려',`tkdReject('${x.id}')`,'sm danger')}</div></div></div>`).join('')}</div>`;
+  const coachApproved=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.role==='coach'&&x.status==='approved');
+  if(coachApproved.length)host.innerHTML+=`<div style="margin-top:20px"><h3>승인된 사범 계정 관리 (${coachApproved.length})</h3>${coachApproved.map(x=>`<div class="notice" style="margin-bottom:10px"><div><b>${esc(x.name)} · 사범</b><p>기기 변경 시 기존 계정의 접근을 해제하고 새 초대코드를 발급합니다.</p><div class="row">${btn('기기 변경·계정 복구',`tkdStartRecovery('${x.id}')`,'sm secondary')}</div></div></div>`).join('')}</div>`;
  }catch(e){host.textContent='가입 신청 조회 실패: '+e.message;}
+}
+async function tkdStartRecovery(uid){
+ if(role!=='owner'||!cloudReady||!firebase.auth().currentUser)return;
+ const fs=firebase.firestore(),userRef=fs.doc('users/'+uid);
+ try{
+  const userSnap=await userRef.get();
+  if(!userSnap.exists)throw Error('기존 승인 계정을 찾을 수 없습니다.');
+  const a=userSnap.data();
+  if(!['parent','coach'].includes(a.role))throw Error('복구 대상이 아닙니다.');
+  if(a.active!==true){alert('이 계정은 이미 비활성화되어 있습니다. 중복 복구를 진행하지 마세요.');return;}
+  const sid=a.role==='parent'?Number(a.sid):null;
+  const child=a.role==='parent'?student(sid):null;
+  if(a.role==='parent'&&(!child||!Number.isSafeInteger(sid)||sid<=0))throw Error('자녀 연결을 확인할 수 없습니다.');
+  const msg=`${a.name||'회원'}님의 기기 변경 복구를 진행하시겠습니까?\n\n기존 기기 계정은 즉시 접근이 차단됩니다. 새 기기에서 초대코드로 다시 가입한 뒤 관장님이 새 가입 신청을 승인해야 합니다.\n\n기존 관원·출결·회비 데이터는 삭제되지 않습니다.`;
+  if(!confirm(msg))return;
+  const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+  const code=(a.role==='parent'?'TP-':'TC-')+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+  const expiresAt=firebase.firestore.Timestamp.fromMillis(Date.now()+7*86400000);
+  const invitationRef=fs.collection('invitations').doc();
+  const batch=fs.batch();
+  batch.set(invitationRef,{code,role:a.role,sid:sid,childName:child?child.name:'',used:false,createdAt:firebase.firestore.FieldValue.serverTimestamp(),expiresAt});
+  batch.update(userRef,{active:false,recoveryRequestedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  await batch.commit();
+  const message=`[경희 이기성 태권도] 기기 변경 계정 복구 안내\n\n앱 주소: ${location.origin+location.pathname}\n새 초대코드: ${code}\n유효기간: 7일\n\n새 기기에서 ${a.role==='parent'?'학부모':'사범님'} 모드를 선택하고 '초대코드로 처음 등록하기'를 누르세요. 새 암호를 설정해 가입 신청한 뒤 관장님의 승인을 받아야 합니다. 기존 계정은 접근이 중지되었습니다.`;
+  modal(`<h2>계정 복구 초대코드 발급 완료</h2><p>기존 계정은 비활성화되었습니다. 새 계정 가입과 승인 전까지 해당 회원은 로그인할 수 없습니다.</p><div class="card" style="overflow-wrap:anywhere">${esc(code)}</div><textarea id="inviteSmsMessage" class="field" rows="10" readonly style="width:100%">${esc(message)}</textarea><div class="row">${btn('안내문구 전체 복사','copyInviteMessage()')}${btn('닫기','closeModal()','ghost')}</div>`);
+  tkdRefreshApprovals();
+ }catch(e){alert('계정 복구 초대 발급 실패: '+e.message);}
 }
 async function tkdApprove(uid){
  if(role!=='owner'||!cloudReady)return;
@@ -614,6 +747,7 @@ async function firebaseResetPassword(){
  catch(e){alert('요청을 처리할 수 없습니다. ('+e.code+')');}
 }
 async function cloudOwnerSession(user){
+ tkdCoachStopWatch();
  cloudReady=false;
  if(cloudUnsub){cloudUnsub();cloudUnsub=null;}
  if(!user){currentAccount=null;showAuth();return;}
@@ -634,6 +768,7 @@ async function cloudOwnerSession(user){
     currentAccount={id:user.uid,name:a.name||('사용자'),role,sid:a.sid??null,childIds:a.sid!=null?[a.sid]:[]};
     selectedChildId=role==='parent'?Number(a.sid):null;
     cloudReady=false;page='home';$('#authroot').innerHTML='';render();
+    if(role==='coach')tkdCoachWatchChanges();
     cloudUnsub=viewRef.onSnapshot(snapshot=>{
      if(!snapshot.exists)return;
      try{const next=JSON.parse(snapshot.data().payload||'{}');if(!Array.isArray(next.students))return;
@@ -657,7 +792,7 @@ async function cloudOwnerSession(user){
   db.dues??={};db.coachInvites??=[];db.promotionHistory??=[];db.growthHistory??=[];db.closedDays??={};db.attendanceFinalized??={};
   // 첫 실행에서 로그인 화면을 최소 1.2초 유지 (추가 시작 화면 없음)
   await new Promise(resolve=>setTimeout(resolve,Math.max(0,1200-(Date.now()-tkdInitialDisplayAt))));
-  cloudReady=true;$('#authroot').innerHTML='';render();tkdPublishRoleViews();
+  cloudReady=true;$('#authroot').innerHTML='';render();tkdPublishRoleViews();tkdOwnerWatchChanges();
   cloudUnsub=firebase.firestore().doc('academyData/main').onSnapshot(snap=>{
    if(!cloudReady||!snap.exists||snap.metadata.hasPendingWrites)return;
    if(cloudPending>0)return;
