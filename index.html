@@ -368,7 +368,7 @@ body:has(#bottom button:nth-child(3):last-child) #view>.hero h2{font-size:clamp(
 <style id="tkd-v730-viewport-fit-dobok">
 /* Owner and coach home only: use available device viewport height rather than a fixed reduction. */
 @media (max-width:690px) and (min-height:560px){
- .main:has(#view>.owner-metrics){display:flex;flex-direction:column;min-height:0;height:calc(100dvh - 76px);}
+ .main:has(#view>.owner-metrics){display:flex;flex-direction:column;box-sizing:border-box;min-height:0;height:calc(100dvh - 76px);padding-bottom:8px!important;}
  .main:has(#view>.owner-metrics) .top{flex:none;}
  #view:has(>.owner-metrics){display:grid;grid-template-rows:minmax(0,1.14fr) minmax(0,1fr) minmax(0,1.08fr);gap:clamp(7px,1.25dvh,15px);flex:1;min-height:0;overflow:hidden;}
  #view:has(>.owner-metrics) .owner-metrics{margin:0;min-height:0;gap:clamp(7px,1.25dvh,13px);}
