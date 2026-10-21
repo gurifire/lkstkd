@@ -188,12 +188,12 @@
 .tkd-parent-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
 .tkd-parent-week{text-align:center;font-size:12px;color:#78849a;padding:7px 0;font-weight:700}
 .tkd-parent-day{min-height:55px;border-radius:12px;background:#f5f7fb;padding:7px 5px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;font-size:13px;color:#334155}
-.tkd-parent-day b{font-size:16px}.tkd-parent-blank{background:transparent}
-.tkd-parent-present{background:#dcfce7;color:#166534}.tkd-parent-absent{background:#f1f5f9;color:#64748b}
+.tkd-parent-day b{font-size:12px;line-height:1;display:block;flex:none}.tkd-parent-blank{background:transparent}
+.tkd-parent-present{background:#dcfce7;color:#166534}.tkd-parent-absent{background:#fee2e2;color:#b91c1c}
 .tkd-parent-future{opacity:.5}.tkd-parent-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;font-size:12px;color:#64748b}
 .tkd-parent-promo-highlight{display:flex;align-items:center;gap:16px;padding:18px;border-radius:16px;background:linear-gradient(120deg,#ecfdf5,#eff6ff);margin:15px 0}
 .tkd-parent-promo-highlight h2{margin:4px 0;font-size:24px}.tkd-parent-promo-highlight p{margin:0}
-.tkd-parent-promo-icon{font-size:40px}.tkd-parent-promo-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.tkd-parent-promo-icon{font-size:40px}.tkd-parent-promo-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
 .tkd-parent-promo-item{border:1px solid #e2e8f0;border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:7px}
 .tkd-parent-promo-item span{font-size:12px;color:#64748b}.tkd-parent-promo-item strong{font-size:15px;overflow-wrap:anywhere}
 .tkd-parent-timeline{border-left:2px solid #b7e4cf;margin-left:12px;padding-left:18px}
@@ -478,7 +478,7 @@ function tkdParentPromotion(x){
  const history=(db.promotionHistory||[]).filter(h=>Number(h.sid)===Number(x.id)).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  const rank=Number(x.rankLevel)>0?String(x.rankLevel)+(x.rankKind==='단'?'단':'품'):'미취득';
  const currentGrade=x.gradeLevel?String(x.gradeLevel)+'급':'미입력';
- return `<div class="card">${head('🌱 우리 아이 성장 기록')}<div class="tkd-parent-promo-highlight"><div class="tkd-parent-promo-icon">🌱</div><div><span class="muted mini">현재 성장 단계</span><h2>${esc(x.belt||'미입력')}</h2><p>${esc(currentGrade)} · ${esc(rank)}</p></div></div><div class="tkd-parent-promo-grid"><div class="tkd-parent-promo-item"><span>다음 승급 예정일</span><strong>${esc(nextGradeDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>다음 승품(단) 예정일</span><strong>${esc(nextRankDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>최근 품·단 취득일</span><strong>${esc(x.rankAwarded||'미입력')}</strong></div></div>${history.length?`<h3 style="font-size:16px;margin:18px 0 10px">승급 기록</h3><div class="tkd-parent-timeline">${history.map(h=>`<div class="tkd-parent-timeline-item"><span>🏅</span><div><b>${esc(h.after||'승급')}</b><p>${esc(h.date||'날짜 미입력')}${h.before?' · '+esc(h.before)+' → '+esc(h.after||''):''}</p></div></div>`).join('')}</div>`:''}<p class="muted mini" style="margin-top:15px">예정일은 수련기간을 기준으로 한 참고 날짜이며, 실제 심사 일정은 도장에 확인해 주세요.</p></div>`;
+ return `<div class="card">${head('🌱 우리 아이 성장 기록')}<div class="tkd-parent-promo-highlight"><div class="tkd-parent-promo-icon">🌱</div><div><span class="muted mini">현재 성장 단계</span><h2>${esc(x.belt||'미입력')}</h2><p>${esc(currentGrade)} · ${esc(rank)}</p></div></div><div class="tkd-parent-promo-grid"><div class="tkd-parent-promo-item"><span>입관일</span><strong>${esc(x.joined||'미입력')}</strong></div><div class="tkd-parent-promo-item"><span>다음 승급 예정일</span><strong>${esc(nextGradeDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>다음 승품(단) 예정일</span><strong>${esc(nextRankDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>최근 품·단 취득일</span><strong>${esc(x.rankAwarded||'미입력')}</strong></div></div>${history.length?`<h3 style="font-size:16px;margin:18px 0 10px">승급 기록</h3><div class="tkd-parent-timeline">${history.map(h=>`<div class="tkd-parent-timeline-item"><span>🏅</span><div><b>${esc(h.after||'승급')}</b><p>${esc(h.date||'날짜 미입력')}${h.before?' · '+esc(h.before)+' → '+esc(h.after||''):''}</p></div></div>`).join('')}</div>`:''}<p class="muted mini" style="margin-top:15px">예정일은 수련기간을 기준으로 한 참고 날짜이며, 실제 심사 일정은 도장에 확인해 주세요.</p></div>`;
 }
 function tkdParentNews(x){
  const items=(db.growthHistory||[]).filter(h=>Number(h.sid)===Number(x.id)).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
