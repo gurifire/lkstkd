@@ -769,7 +769,7 @@ async function cloudOwnerSession(user){
   if(!doc.exists||doc.data().role!=='owner'||doc.data().active!==true){
    if(doc.exists&&['coach','parent'].includes(doc.data().role)&&doc.data().active===true){
     const a=doc.data();role=a.role;
-    const viewRef=firebase.firestore().doc((role==='coach'?'staffViews/main':'parentViews/'+user.uid));
+    const viewRef=firebase.firestore().doc((role==='coach'?'academyData/main':'parentViews/'+user.uid));
     const snap=await viewRef.get();
     if(!snap.exists){
      currentAccount=null;document.body.classList.add('tkd-auth-pending');
@@ -777,7 +777,7 @@ async function cloudOwnerSession(user){
     }
     const view=JSON.parse(snap.data().payload||'{}');
     if(!Array.isArray(view.students))throw Error('역할별 자료 형식이 올바르지 않습니다.');
-    db={...initial(),students:view.students,attendance:view.attendance||{},dues:view.dues||{},notices:view.notices||[],missions:view.missions||[],promotionHistory:view.promotionHistory||[],growthHistory:view.growthHistory||[],closedDays:view.closedDays||{},attendanceFinalized:view.attendanceFinalized||{},invites:[],coachInvites:[],reviews:[]};
+    db=role==='coach'?view:{...initial(),students:view.students,attendance:view.attendance||{},dues:view.dues||{},notices:view.notices||[],missions:view.missions||[],promotionHistory:view.promotionHistory||[],growthHistory:view.growthHistory||[],closedDays:view.closedDays||{},attendanceFinalized:view.attendanceFinalized||{},invites:[],coachInvites:[],reviews:[]};
     currentAccount={id:user.uid,name:a.name||('사용자'),role,sid:a.sid??null,childIds:a.sid!=null?[a.sid]:[]};
     selectedChildId=role==='parent'?Number(a.sid):null;
     cloudReady=false;page='home';$('#authroot').innerHTML='';render();
@@ -785,7 +785,7 @@ async function cloudOwnerSession(user){
     cloudUnsub=viewRef.onSnapshot(snapshot=>{
      if(!snapshot.exists)return;
      try{const next=JSON.parse(snapshot.data().payload||'{}');if(!Array.isArray(next.students))return;
-      db={...db,...next,invites:[],coachInvites:[],reviews:[]};render();
+      db=role==='coach'?next:{...db,...next,invites:[],coachInvites:[],reviews:[]};render();
      }catch(e){console.error('역할별 조회 동기화 실패',e)}
     },e=>console.error('역할별 조회 중단',e));
     return;
