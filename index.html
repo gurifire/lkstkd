@@ -760,10 +760,22 @@ function openPromotion(id){if(!['owner','coach'].includes(role))return;navigate(
  await tkdIssueInvite('parent',id,x.name);
 }
 async function inviteCoach(){if(role!=='owner'||!cloudReady)return;await tkdIssueInvite('coach',null,'');}
+async function tkdNewEightDigitInviteCode(fs){
+ for(let attempt=0;attempt<20;attempt++){
+  const value=new Uint32Array(1);
+  crypto.getRandomValues(value);
+  // Rejection sampling prevents modulo bias across the 90 million 8-digit codes.
+  const range=90000000,limit=Math.floor(4294967296/range)*range;
+  if(value[0]>=limit)continue;
+  const code=String(10000000+(value[0]%range));
+  const existing=await fs.collection('invitations').where('code','==',code).limit(1).get();
+  if(existing.empty)return code;
+ }
+ throw Error('사용 가능한 초대코드를 생성하지 못했습니다. 다시 시도해 주세요.');
+}
 async function tkdIssueInvite(type,sid,childName){
  try{
-  const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
-  const code=(type==='parent'?'TP-':'TC-')+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+  const code=await tkdNewEightDigitInviteCode(firebase.firestore());
   const expiresAt=firebase.firestore.Timestamp.fromMillis(Date.now()+7*86400000);
   await firebase.firestore().collection('invitations').add({code,role:type,sid:sid===null?null:Number(sid),childName:childName||'',used:false,createdAt:firebase.firestore.FieldValue.serverTimestamp(),expiresAt});
   const message=`[경희 이기성 태권도] ${type==='parent'?'학부모':'사범님'} 초대 안내\n\n앱 주소: ${location.origin+location.pathname}\n초대코드: ${code}\n유효기간: 발급 후 7일\n\n앱에 접속하여 초대코드로 최초 등록한 뒤 관장님의 가입 승인을 기다려 주세요.\n개인 로그인 암호는 최초 등록 화면에서 설정합니다.`;
@@ -910,8 +922,7 @@ async function tkdStartRecovery(uid){
   if(a.role==='parent'&&(!child||!Number.isSafeInteger(sid)||sid<=0))throw Error('자녀 연결을 확인할 수 없습니다.');
   const msg=`${a.name||'회원'}님의 기기 변경 복구를 진행하시겠습니까?\n\n기존 기기 계정은 즉시 접근이 차단됩니다. 새 기기에서 초대코드로 다시 가입한 뒤 관장님이 새 가입 신청을 승인해야 합니다.\n\n기존 관원·출결·회비 데이터는 삭제되지 않습니다.`;
   if(!confirm(msg))return;
-  const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
-  const code=(a.role==='parent'?'TP-':'TC-')+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+  const code=await tkdNewEightDigitInviteCode(fs);
   const expiresAt=firebase.firestore.Timestamp.fromMillis(Date.now()+7*86400000);
   const invitationRef=fs.collection('invitations').doc();
   const batch=fs.batch();
