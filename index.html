@@ -971,9 +971,47 @@ function studentView(){let x=ownChild();if(!x)return '<div class="card empty">�
 const authStyle=document.createElement('style');authStyle.textContent=`#authroot:not(:empty){position:fixed;inset:0;z-index:300;background:linear-gradient(150deg,#edf4ff,#f8fbff);overflow:auto;display:grid;place-items:center;padding:24px 14px} .authpanel{background:#fff;border:1px solid #dfe8f6;border-radius:24px;padding:28px;width:min(460px,100%);box-shadow:0 20px 55px #172c5220}.authpanel h1{font-size:26px;margin:8px 0}.authpanel p{color:#65738a}.authpanel label{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}.authpanel .field{margin-top:4px}.authpanel .btn{width:100%;margin-top:12px}.accountpick{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:14px;border:1px solid #e0e7f2;border-radius:13px;background:#fff;margin-top:9px;cursor:pointer;text-align:left}.accountpick:hover{background:#f1f6ff}.authhint{background:#fff8e8;padding:12px;border-radius:12px;color:#805f20;font-size:12px;margin:16px 0}`;document.head.appendChild(authStyle);
 
 const TKD_MEMBER_DEVICE='tkd_member_identity_v1';
+const TKD_MEMBER_ACCOUNTS='tkd_member_accounts_v2';
+const TKD_MEMBER_SELECTED='tkd_member_selected_v2';
+let tkdMemberAccounts=[];
+try{
+ const saved=JSON.parse(localStorage.getItem(TKD_MEMBER_ACCOUNTS)||'[]');
+ if(Array.isArray(saved))tkdMemberAccounts=saved.filter(x=>x&&typeof x.email==='string'&&['parent','coach'].includes(x.role));
+ const legacy=JSON.parse(localStorage.getItem(TKD_MEMBER_DEVICE)||'null');
+ if(legacy&&legacy.email&&['parent','coach'].includes(legacy.role)&&!tkdMemberAccounts.some(x=>x.email===legacy.email)){
+  tkdMemberAccounts.push({email:legacy.email,role:legacy.role,name:legacy.name||''});
+ }
+ localStorage.setItem(TKD_MEMBER_ACCOUNTS,JSON.stringify(tkdMemberAccounts));
+}catch(e){console.warn('기기 계정 목록 복구 실패',e);}
 let tkdMemberIdentity=null;
-try{tkdMemberIdentity=JSON.parse(localStorage.getItem(TKD_MEMBER_DEVICE)||'null')}catch(e){}
-function tkdMemberInfo(){return tkdMemberIdentity&&tkdMemberIdentity.email?tkdMemberIdentity:null}
+function tkdMemberAccountsForRole(){return tkdMemberAccounts.filter(x=>x.role===tkdLoginRole)}
+function tkdMemberInfo(){
+ const choices=tkdMemberAccountsForRole();
+ const selected=localStorage.getItem(TKD_MEMBER_SELECTED);
+ return choices.find(x=>x.email===selected)||choices[0]||null;
+}
+function tkdRememberMember(identity){
+ if(!identity||!identity.email||!['parent','coach'].includes(identity.role))return;
+ const old=tkdMemberAccounts.find(x=>x.email===identity.email);
+ if(old)Object.assign(old,identity);
+ else tkdMemberAccounts.push(identity);
+ localStorage.setItem(TKD_MEMBER_ACCOUNTS,JSON.stringify(tkdMemberAccounts));
+ localStorage.setItem(TKD_MEMBER_SELECTED,identity.email);
+ // Preserve the legacy key for compatibility with previously deployed versions.
+ localStorage.setItem(TKD_MEMBER_DEVICE,JSON.stringify(identity));
+ tkdMemberIdentity=identity;
+}
+function tkdSelectMemberAccount(email){
+ if(!tkdMemberAccountsForRole().some(x=>x.email===email))return;
+ localStorage.setItem(TKD_MEMBER_SELECTED,email);
+ showAuth();
+}
+function tkdMemberAccountChooser(){
+ const choices=tkdMemberAccountsForRole();
+ if(!choices.length)return '<p class="authhint">이 기기에 저장된 계정이 없습니다. 기존 계정은 관장님에게 복구를 요청하세요.</p>';
+ const chosen=tkdMemberInfo();
+ return `<div class="auth-input-wrap"><select class="field" aria-label="로그인 계정 선택" onchange="tkdSelectMemberAccount(this.value)">${choices.map(x=>`<option value="${esc(x.email)}" ${x.email===chosen?.email?'selected':''}>${esc(x.name||'등록 계정')}${x.name?' · ':''}${x.role==='coach'?'사범':'학부모'} · ${esc(x.email.slice(0,19))}…</option>`).join('')}</select></div>`;
+}
 function tkdInvitesView(){
  const list=active();
  return `<div class="card">${head('초대코드 발급','발급 후 7일 이내 최초 등록해야 합니다.',btn('사범 초대코드 발급','inviteCoach()'))}<p class="muted">초대코드는 Firebase에 저장되며, 가입 신청은 관장님의 승인 후 활성화됩니다.</p><div class="stack">${list.map(x=>`<div class="notice split"><div><b>${esc(x.name)}</b><p>학부모 초대</p></div>${btn('초대코드 발급',`invite(${x.id})`,'sm secondary')}</div>`).join('')}</div></div>`;
@@ -1165,24 +1203,26 @@ async function tkdRegisterInvite(e){
  try{
   await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
   const credential=await firebase.auth().createUserWithEmailAndPassword(email,String(f.get('pin')));
-  tkdMemberIdentity={email,role:type};localStorage.setItem(TKD_MEMBER_DEVICE,JSON.stringify(tkdMemberIdentity));
+  
   await firebase.firestore().doc('registrationRequests/'+credential.user.uid).set({uid:credential.user.uid,role:type,name,childName:type==='parent'?childName:'',inviteCode:code,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+  tkdRememberMember({email,role:type,name,uid:credential.user.uid});
   await firebase.auth().signOut();tkdLoginRole=type;alert('가입 신청이 접수되었습니다. 관장님 승인 후 로그인할 수 있습니다.');showAuth();
  }catch(err){alert('가입 신청 실패: '+err.message);button.disabled=false;}
 }
 async function tkdMemberLogin(e){
- e.preventDefault();const identity=tkdMemberInfo();if(!identity||identity.role!==tkdLoginRole)return alert('이 기기에 등록된 계정이 없습니다. 최초 등록 또는 관장님에게 계정 복구를 요청하세요.');
+ e.preventDefault();const identity=tkdMemberInfo();if(!identity)return alert('선택 가능한 계정이 없습니다. 최초 등록 또는 관장님에게 계정 복구를 요청하세요.');
  const f=new FormData(e.target),button=e.target.querySelector('[type=submit]');button.disabled=true;
  try{
   await firebase.auth().setPersistence(f.get('remember')?firebase.auth.Auth.Persistence.LOCAL:firebase.auth.Auth.Persistence.SESSION);
   await firebase.auth().signInWithEmailAndPassword(identity.email,String(f.get('pin')));
+  tkdRememberMember(identity);
  }catch(err){alert('로그인 실패: 암호를 확인하세요. ('+err.code+')');button.disabled=false;}
 }
 function showAuth(){
  currentAccount=null;document.body.classList.add('tkd-auth-pending');
  const isOwner=tkdLoginRole==='owner';
  const roleButtons=['owner','coach','parent'].map((r,i)=>`<button type="button" class="tkd-role-tab${tkdLoginRole===r?' active':''}" onclick="tkdChooseLoginRole('${r}')" aria-pressed="${tkdLoginRole===r}">${['관장님','사범님','학부모'][i]}</button>`).join('');
- const fields=isOwner?`<form class="demo-login-fields" onsubmit="firebaseOwnerLogin(event)"><div class="auth-input-wrap"><span class="auth-field-icon">✉</span><input class="field" type="email" name="email" aria-label="이메일" autocomplete="username" required placeholder="관장 이메일"></div><div class="auth-input-wrap"><span class="auth-field-icon">♙</span><input class="field" type="password" name="password" aria-label="비밀번호" autocomplete="current-password" required placeholder="비밀번호"></div><button class="btn auth-login-button" type="submit">로그인</button><button type="button" class="btn secondary" onclick="firebaseResetPassword()">비밀번호 재설정 메일</button></form>`:`<form class="demo-login-fields" onsubmit="tkdMemberLogin(event)"><div class="auth-input-wrap"><span class="auth-field-icon">♙</span><input class="field" type="password" name="pin" autocomplete="off" required placeholder="개인 로그인 암호"></div><label style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="checkbox" name="remember"> 자동 로그인 유지</label><button class="btn auth-login-button" type="submit">로그인</button><button type="button" class="btn secondary" onclick="tkdRegistrationScreen()">초대코드로 처음 등록하기</button><p class="authhint">관장 승인 후 이용할 수 있습니다. 기기를 변경한 경우 관장님에게 계정 복구를 요청하세요.</p></form>`;
+ const fields=isOwner?`<form class="demo-login-fields" onsubmit="firebaseOwnerLogin(event)"><div class="auth-input-wrap"><span class="auth-field-icon">✉</span><input class="field" type="email" name="email" aria-label="이메일" autocomplete="username" required placeholder="관장 이메일"></div><div class="auth-input-wrap"><span class="auth-field-icon">♙</span><input class="field" type="password" name="password" aria-label="비밀번호" autocomplete="current-password" required placeholder="비밀번호"></div><button class="btn auth-login-button" type="submit">로그인</button><button type="button" class="btn secondary" onclick="firebaseResetPassword()">비밀번호 재설정 메일</button></form>`:`<form class="demo-login-fields" onsubmit="tkdMemberLogin(event)">${tkdMemberAccountChooser()}<div class="auth-input-wrap"><span class="auth-field-icon">♙</span><input class="field" type="password" name="pin" autocomplete="off" required placeholder="개인 로그인 암호"></div><label style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="checkbox" name="remember"> 자동 로그인 유지</label><button class="btn auth-login-button" type="submit">로그인</button><button type="button" class="btn secondary" onclick="tkdRegistrationScreen()">초대코드로 처음 등록하기</button><p class="authhint">관장 승인 후 이용할 수 있습니다. 기기를 변경한 경우 관장님에게 계정 복구를 요청하세요.</p></form>`;
  $('#authroot').innerHTML=`<div class="authpanel branded-auth auth-login-view"><img class="login-logo" src="${TKD_LOGO}" alt="경희 이기성 태권도 공식 로고"><h1><span style="color:#1755bc">경희</span> 이기성 <span style="color:#d92838">태권도</span></h1><div class="tkd-role-tabs" role="group" aria-label="로그인 유형 선택">${roleButtons}</div>${fields}</div>`;
 }
 async function firebaseOwnerLogin(e){
