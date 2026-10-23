@@ -479,13 +479,13 @@ async function tkdReleaseLock(){
 const TKD_PROFILE_FIELDS=['name','className','belt','guardian','phone','joined','status','note','promotionDate','gradeLevel','rankKind','rankLevel','rankAwarded'];
 const TKD_PROFILE_COLLECTION='studentProfiles';
 let tkdProfileUnsub=null,tkdProfiles=new Map(),tkdProfileLogs=new Map(),tkdProfileMigrationReady=false,tkdProfileSyncing=false;
-function tkdPromotionLogEntry(id,old,next,by){
+function tkdPromotionLogEntry(id,old,next,by,eventId){
  const keys=['belt','gradeLevel','promotionDate','rankKind','rankLevel','rankAwarded'];
  const changed=keys.filter(k=>String(old[k]??'')!==String(next[k]??''));
  if(!changed.length)return null;
  const beltChanged=changed.includes('belt'),gradeChanged=changed.includes('gradeLevel');
  const detail=[beltChanged?'띠 변경':'',gradeChanged?'급수 변경':'',changed.includes('rankKind')||changed.includes('rankLevel')?'품·단 변경':'',changed.includes('rankAwarded')?'품·단 취득일 변경':'',changed.includes('promotionDate')?'승급일 변경':''].filter(Boolean).join(' · ');
- return {sid:Number(id),before:String(old.belt||''),after:String(next.belt||''),date:changed.includes('promotionDate')&&next.promotionDate?String(next.promotionDate):today(),by:String(by||''),createdAtMs:Date.now(),beforeGrade:String(old.gradeLevel??''),afterGrade:String(next.gradeLevel??''),detail};
+ return {sid:Number(id),before:String(old.belt||''),after:String(next.belt||''),date:String(next.promotionDate||today()),by:String(by||''),createdAtMs:Date.now(),eventId:eventId||('promotion-'+Date.now()+'-'+Math.random().toString(36).slice(2,12)),beforeGrade:String(old.gradeLevel??''),afterGrade:String(next.gradeLevel??''),detail};
 }
 const tkdProfileRef=id=>firebase.firestore().doc(TKD_PROFILE_COLLECTION+'/'+String(id));
 function tkdProfileFromStudent(x){
@@ -562,7 +562,7 @@ async function tkdDirectCoachStudent(type,id,fields){
  });
  const latest=await ref.get();tkdProfiles.set(String(id),latest.data().profile||{});tkdProfileLogs.set(String(id),latest.data().promotionLog||[]);tkdApplyAllProfiles();
 }
-async function tkdSyncOwnerProfile(id){
+async function tkdSyncOwnerProfile(id,promotionEventId){
  if(role!=='owner'||!cloudReady)return;
  const x=student(id);if(!x)return;
  const profile=tkdProfileFromStudent(x),ref=tkdProfileRef(id);
@@ -572,7 +572,7 @@ async function tkdSyncOwnerProfile(id){
    // 관장 수정도 사범과 동일한 관원별 승급 이력에 기록합니다.
    // 승급일을 입력하지 않아도 띠·급수 변경을 기록해야 학부모가 즉시 조회할 수 있습니다.
    const before=snap.data().profile||{};
-   const log=tkdPromotionLogEntry(id,before,profile,currentAccount?.id);
+   const log=tkdPromotionLogEntry(id,before,profile,currentAccount?.id,promotionEventId);
    const existing=snap.data().promotionLog||[];
    if(log&&existing.length>=100)throw Error('승급 기록 보관 한도에 도달했습니다.');
    tx.update(ref,{profile,...(log?{promotionLog:[...existing,log]}:{}),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
@@ -1015,12 +1015,12 @@ function renderTable(){let focused=$('#searchbox');if(focused){let pos=focused.s
   const sid=id||Date.now()*1000+Math.floor(Math.random()*1000);
   const ok=await tkdCoachSubmit(id?'studentUpdate':'studentCreate',sid,fields);
   if(ok){closeModal();render();}return;
- }if(id){if(!tkdProfiles.has(String(id))){alert('관원별 최신 정보가 아직 동기화되지 않았습니다. 잠시 후 다시 시도해 주세요.');return;}const x=student(id),before=x.belt,oldDate=x.lastPromotionDate||'';const beltChanged=before!==d.belt,dateChanged=!!d.promotionDate&&oldDate!==d.promotionDate,rankChanged=Number(x.rankLevel||0)!==Number(d.rankLevel||0)||String(x.rankKind||'품')!==String(d.rankKind||'품'),gradeChanged=String(x.gradeLevel??'')!==String(d.gradeLevel??''),awardChanged=String(x.rankAwarded||'')!==String(d.rankAwarded||'');  if(beltChanged||dateChanged||rankChanged||gradeChanged||awardChanged){db.promotionHistory.push({sid:id,before,after:d.belt,date:dateChanged?d.promotionDate:today(),by:currentAccount?.id,createdAtMs:Date.now(),beforeGrade:String(x.gradeLevel??''),afterGrade:String(d.gradeLevel??''),detail:[beltChanged?'띠 변경':'',gradeChanged?'급수 변경':'',rankChanged?'품·단 변경':'',awardChanged?'품·단 취득일 변경':'',dateChanged?'승급일 변경':''].filter(Boolean).join(' · ')});}
+ }if(id){let promotionEventId='';if(!tkdProfiles.has(String(id))){alert('관원별 최신 정보가 아직 동기화되지 않았습니다. 잠시 후 다시 시도해 주세요.');return;}const x=student(id),before=x.belt,oldDate=x.lastPromotionDate||'';const beltChanged=before!==d.belt,dateChanged=!!d.promotionDate&&oldDate!==d.promotionDate,rankChanged=Number(x.rankLevel||0)!==Number(d.rankLevel||0)||String(x.rankKind||'품')!==String(d.rankKind||'품'),gradeChanged=String(x.gradeLevel??'')!==String(d.gradeLevel??''),awardChanged=String(x.rankAwarded||'')!==String(d.rankAwarded||'');  if(beltChanged||dateChanged||rankChanged||gradeChanged||awardChanged){promotionEventId='promotion-'+Date.now()+'-'+Math.random().toString(36).slice(2,12);db.promotionHistory.push({sid:id,before,after:d.belt,date:d.promotionDate||today(),by:currentAccount?.id,createdAtMs:Date.now(),eventId:promotionEventId,beforeGrade:String(x.gradeLevel??''),afterGrade:String(d.gradeLevel??''),detail:[beltChanged?'띠 변경':'',gradeChanged?'급수 변경':'',rankChanged?'품·단 변경':'',awardChanged?'품·단 취득일 변경':'',dateChanged?'승급일 변경':''].filter(Boolean).join(' · ')});}
  if(d.promotionDate)d.lastPromotionDate=d.promotionDate;
  Object.assign(x,d);
  // 원본 저장 전에 개별 관원 프로필과 승급 이력을 먼저 확정합니다.
  // 실패하면 성공 안내를 표시하거나 변경 전 원본을 덮어쓰지 않습니다.
- try{await tkdSyncOwnerProfile(id);}catch(err){
+ try{await tkdSyncOwnerProfile(id,promotionEventId);}catch(err){
   alert('승급 기록 동기화 실패: '+err.message);
   return;
  }
@@ -1198,14 +1198,14 @@ function tkdParentPromotion(x){
  const matchedMain=new Set();
  for(const [i,h] of profileHistory.entries()){
   const timestamp=Number(h.createdAtMs||0);
-  const matchIndex=timestamp?history.findIndex((a,j)=>!matchedMain.has(j)&&a._source===0
-   &&Number(a.createdAtMs||0)>0&&Math.abs(Number(a.createdAtMs)-timestamp)<=2000
+  const matchIndex=history.findIndex((a,j)=>!matchedMain.has(j)&&a._source===0
+   &&(h.eventId&&a.eventId?String(h.eventId)===String(a.eventId):(!h.eventId&&!a.eventId&&timestamp>0&&Number(a.createdAtMs||0)>0&&Math.abs(Number(a.createdAtMs)-timestamp)<=2000))
    &&String(a.date||'')===String(h.date||'')
    &&String(a.before||'')===String(h.before||'')
    &&String(a.after||'')===String(h.after||'')
    &&String(a.beforeGrade??'')===String(h.beforeGrade??'')
    &&String(a.afterGrade??'')===String(h.afterGrade??'')
-   &&String(a.detail||'')===String(h.detail||'')):-1;
+   &&String(a.detail||'')===String(h.detail||''));
   if(matchIndex>=0)matchedMain.add(matchIndex);
   else history.push({...h,_order:i,_source:1});
  }
