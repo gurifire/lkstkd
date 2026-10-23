@@ -568,10 +568,19 @@ async function tkdSyncOwnerProfile(id){
  const profile=tkdProfileFromStudent(x),ref=tkdProfileRef(id);
  await firebase.firestore().runTransaction(async tx=>{
   const snap=await tx.get(ref);
-  if(snap.exists)tx.update(ref,{profile,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
-  else tx.set(ref,{id:Number(id),profile,promotionLog:[],createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  if(snap.exists){
+   // 관장 수정도 사범과 동일한 관원별 승급 이력에 기록합니다.
+   // 승급일을 입력하지 않아도 띠·급수 변경을 기록해야 학부모가 즉시 조회할 수 있습니다.
+   const before=snap.data().profile||{};
+   const log=tkdPromotionLogEntry(id,before,profile,currentAccount?.id);
+   const existing=snap.data().promotionLog||[];
+   if(log&&existing.length>=100)throw Error('승급 기록 보관 한도에 도달했습니다.');
+   tx.update(ref,{profile,...(log?{promotionLog:[...existing,log]}:{}),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  }else tx.set(ref,{id:Number(id),profile,promotionLog:[],createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
  });
- tkdProfiles.set(String(id),profile);
+ const latest=await ref.get();
+ tkdProfiles.set(String(id),latest.data().profile||{});
+ tkdProfileLogs.set(String(id),latest.data().promotionLog||[]);
 }
 
 // v7.8: 관장 데이터와 분리된 최소 권한 조회 자료. 기존 원본 데이터는 변경하지 않습니다.
@@ -1008,7 +1017,14 @@ function renderTable(){let focused=$('#searchbox');if(focused){let pos=focused.s
   if(ok){closeModal();render();}return;
  }if(id){if(!tkdProfiles.has(String(id))){alert('관원별 최신 정보가 아직 동기화되지 않았습니다. 잠시 후 다시 시도해 주세요.');return;}const x=student(id),before=x.belt,oldDate=x.lastPromotionDate||'';const beltChanged=before!==d.belt,dateChanged=!!d.promotionDate&&oldDate!==d.promotionDate,rankChanged=Number(x.rankLevel||0)!==Number(d.rankLevel||0)||String(x.rankKind||'품')!==String(d.rankKind||'품'),gradeChanged=String(x.gradeLevel??'')!==String(d.gradeLevel??''),awardChanged=String(x.rankAwarded||'')!==String(d.rankAwarded||'');  if(beltChanged||dateChanged||rankChanged||gradeChanged||awardChanged){db.promotionHistory.push({sid:id,before,after:d.belt,date:dateChanged?d.promotionDate:today(),by:currentAccount?.id,createdAtMs:Date.now(),beforeGrade:String(x.gradeLevel??''),afterGrade:String(d.gradeLevel??''),detail:[beltChanged?'띠 변경':'',gradeChanged?'급수 변경':'',rankChanged?'품·단 변경':'',awardChanged?'품·단 취득일 변경':'',dateChanged?'승급일 변경':''].filter(Boolean).join(' · ')});}
  if(d.promotionDate)d.lastPromotionDate=d.promotionDate;
- Object.assign(x,d);}else{const newId=Math.max(0,...db.students.map(x=>x.id))+1;db.students.push({...d,id:newId,att:0,total:0,paid:false,level:1,mission:0,note:'',linked:false});if(d.promotionDate){db.students[db.students.length-1].lastPromotionDate=d.promotionDate;db.promotionHistory.push({sid:newId,before:'',after:d.belt,date:d.promotionDate,by:currentAccount?.id});}}if(!id){try{await tkdSyncOwnerProfile(db.students[db.students.length-1].id);}catch(err){alert('관원별 저장 실패: '+err.message);return;}}save();closeModal();render();toast('관원 정보가 저장되었습니다.')}function toggleAtt(id,v){if(!['owner','coach'].includes(role))return;db.attendance[today()]??={};db.attendance[today()][id]=v;save();toast(v?'출석 등록 완료':'출석 해제 완료')}async function markAll(){if(!['owner','coach'].includes(role))return;if(!await tkdAcquireLock(tkdLockKeyAttendance(attendanceDate)))return;active().filter(x=>attendanceDate===today()?isClassDay(x,attendanceDate):(x.joined||'0000-00-00')<=attendanceDate).forEach(x=>attendanceDraft[x.id]='present');renderAttendanceList();toast('전체 출석 선택 완료 · 저장 버튼을 눌러주세요')}// 관원별 최초 납부예정일을 기준으로 월마다 같은 일자를 계산한다.
+ Object.assign(x,d);
+ // 원본 저장 전에 개별 관원 프로필과 승급 이력을 먼저 확정합니다.
+ // 실패하면 성공 안내를 표시하거나 변경 전 원본을 덮어쓰지 않습니다.
+ try{await tkdSyncOwnerProfile(id);}catch(err){
+  alert('승급 기록 동기화 실패: '+err.message);
+  return;
+ }
+ }else{const newId=Math.max(0,...db.students.map(x=>x.id))+1;db.students.push({...d,id:newId,att:0,total:0,paid:false,level:1,mission:0,note:'',linked:false});if(d.promotionDate){db.students[db.students.length-1].lastPromotionDate=d.promotionDate;db.promotionHistory.push({sid:newId,before:'',after:d.belt,date:d.promotionDate,by:currentAccount?.id});}}if(!id){try{await tkdSyncOwnerProfile(db.students[db.students.length-1].id);}catch(err){alert('관원별 저장 실패: '+err.message);return;}}save();closeModal();render();toast('관원 정보가 저장되었습니다.')}function toggleAtt(id,v){if(!['owner','coach'].includes(role))return;db.attendance[today()]??={};db.attendance[today()][id]=v;save();toast(v?'출석 등록 완료':'출석 해제 완료')}async function markAll(){if(!['owner','coach'].includes(role))return;if(!await tkdAcquireLock(tkdLockKeyAttendance(attendanceDate)))return;active().filter(x=>attendanceDate===today()?isClassDay(x,attendanceDate):(x.joined||'0000-00-00')<=attendanceDate).forEach(x=>attendanceDraft[x.id]='present');renderAttendanceList();toast('전체 출석 선택 완료 · 저장 버튼을 눌러주세요')}// 관원별 최초 납부예정일을 기준으로 월마다 같은 일자를 계산한다.
 // 수동 변경 내역은 적용 월부터 이후 월에만 반영하여 과거 이력을 유지한다.
 function dueDateFor(x,month){
  if(!x||!/^[0-9]{4}-[0-9]{2}$/.test(month||''))return '';
