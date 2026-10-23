@@ -478,7 +478,14 @@ async function tkdReleaseLock(){
 // v7.42: 관원별 독립 프로필. 회비/출결/과거 이력은 이 문서에 저장하지 않습니다.
 const TKD_PROFILE_FIELDS=['name','className','belt','guardian','phone','joined','status','note','promotionDate','gradeLevel','rankKind','rankLevel','rankAwarded'];
 const TKD_PROFILE_COLLECTION='studentProfiles';
-let tkdProfileUnsub=null,tkdProfiles=new Map(),tkdProfileMigrationReady=false,tkdProfileSyncing=false;
+let tkdProfileUnsub=null,tkdProfiles=new Map(),tkdProfileLogs=new Map(),tkdProfileMigrationReady=false,tkdProfileSyncing=false;
+function tkdPromotionLogEntry(id,old,next,by){
+ const keys=['belt','gradeLevel','promotionDate','rankKind','rankLevel','rankAwarded'];
+ const changed=keys.filter(k=>String(old[k]??'')!==String(next[k]??''));
+ if(!changed.length)return null;
+ const beltChanged=changed.includes('belt');
+ return {sid:Number(id),before:String(old.belt||''),after:String(next.belt||''),date:String(next.promotionDate||old.promotionDate||today()),by:String(by||''),detail:beltChanged?'띠 변경':changed.includes('rankKind')||changed.includes('rankLevel')?'품·단 변경':changed.includes('gradeLevel')?'급수 변경':changed.includes('rankAwarded')?'품·단 취득일 변경':'승급일 변경'};
+}
 const tkdProfileRef=id=>firebase.firestore().doc(TKD_PROFILE_COLLECTION+'/'+String(id));
 function tkdProfileFromStudent(x){
  const p={};for(const k of TKD_PROFILE_FIELDS){const v=k==='promotionDate'?(x.lastPromotionDate||x.promotionDate||''):x[k];p[k]=String(v??'');}
@@ -501,20 +508,20 @@ function tkdApplyAllProfiles(){
   if(x)tkdApplyProfile(x,p);
  }
 }
-function tkdStopProfiles(){if(tkdProfileUnsub){tkdProfileUnsub();tkdProfileUnsub=null;}tkdProfiles.clear();tkdProfileMigrationReady=false;}
+function tkdStopProfiles(){if(tkdProfileUnsub){tkdProfileUnsub();tkdProfileUnsub=null;}tkdProfiles.clear();tkdProfileLogs.clear();tkdProfileMigrationReady=false;}
 function tkdWatchProfiles(){
  tkdStopProfiles();if(!currentAccount||!['owner','coach','parent'].includes(role))return;
  if(role==='parent'){
   // 부모는 본인 계정에 연결된 자녀 문서만 조회할 수 있습니다.
   const ids=[...new Set([currentAccount.sid,...(currentAccount.childIds||[])].filter(x=>x!=null).map(String))];
   const unsubs=ids.map(id=>tkdProfileRef(id).onSnapshot(snap=>{
-   if(snap.exists)tkdProfiles.set(id,snap.data().profile||{});else tkdProfiles.delete(id);
+   if(snap.exists){tkdProfiles.set(id,snap.data().profile||{});tkdProfileLogs.set(id,snap.data().promotionLog||[]);}else{tkdProfiles.delete(id);tkdProfileLogs.delete(id);}
    tkdApplyAllProfiles();if(currentAccount)render();
   },e=>console.warn('자녀 프로필 동기화 실패',e)));
   tkdProfileUnsub=()=>unsubs.forEach(f=>f());return;
  }
  tkdProfileUnsub=firebase.firestore().collection(TKD_PROFILE_COLLECTION).onSnapshot(snap=>{
-  tkdProfiles=new Map(snap.docs.map(d=>[d.id,d.data().profile||{}]));
+  tkdProfiles=new Map(snap.docs.map(d=>[d.id,d.data().profile||{}]));tkdProfileLogs=new Map(snap.docs.map(d=>[d.id,d.data().promotionLog||[]]));
   tkdApplyAllProfiles();if(currentAccount&&!tkdActiveLockKey)render();
  },e=>console.error('관원별 프로필 동기화 실패',e));
 }
@@ -544,10 +551,13 @@ async function tkdDirectCoachStudent(type,id,fields){
    const previous=snap.data().profile||{};
    const next={...previous};for(const [k,v] of Object.entries(fields))if(TKD_PROFILE_FIELDS.includes(k))next[k]=String(v);
    if(!next.name)throw Error('관원 이름은 비울 수 없습니다.');
-   tx.update(ref,{profile:next,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+   const log=tkdPromotionLogEntry(id,previous,next,currentAccount.id);
+   const existing=snap.data().promotionLog||[];
+   if(log&&existing.length>=100)throw Error('승급 기록 보관 한도에 도달했습니다. 관장님에게 문의하세요.');
+   tx.update(ref,{profile:next,...(log?{promotionLog:[...existing,log]}:{}),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
   }
  });
- tkdProfiles.set(String(id),{...(tkdProfiles.get(String(id))||{}),...fields});tkdApplyAllProfiles();
+ const latest=await ref.get();tkdProfiles.set(String(id),latest.data().profile||{});tkdProfileLogs.set(String(id),latest.data().promotionLog||[]);tkdApplyAllProfiles();
 }
 async function tkdSyncOwnerProfile(id){
  if(role!=='owner'||!cloudReady)return;
@@ -756,7 +766,11 @@ async function tkdSyncOwnerProfileDiffs(changes){
    for(const [k,v] of Object.entries(item.changes)){
     if(String(old[k]??'')!==String(item.baseline[k]??''))throw Error('사범이 동일 항목을 먼저 수정했습니다. 새로고침 후 다시 시도하세요.');
    }
-   tx.update(ref,{profile:{...old,...item.changes},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+   const next={...old,...item.changes};
+   const log=tkdPromotionLogEntry(item.id,old,next,currentAccount.id);
+   const existing=snap.data().promotionLog||[];
+   if(log&&existing.length>=100)throw Error('승급 기록 보관 한도에 도달했습니다: '+item.id);
+   tx.update(ref,{profile:next,...(log?{promotionLog:[...existing,log]}:{}),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
   });
   tkdProfiles.set(String(item.id),{...(tkdProfiles.get(String(item.id))||{}),...item.changes});
  }
@@ -1064,7 +1078,11 @@ function tkdParentCalendar(x){
  return `<div class="tkd-parent-monthbar"><button type="button" class="btn sm secondary" onclick="tkdParentMonthShift(-1)" aria-label="이전 달">‹</button><strong>${year}년 ${mon}월</strong><button type="button" class="btn sm secondary" onclick="tkdParentMonthShift(1)" aria-label="다음 달">›</button></div><div class="tkd-parent-calendar">${['일','월','화','수','목','금','토'].map(v=>`<div class="tkd-parent-week">${v}</div>`).join('')}${cells.join('')}</div><div class="tkd-parent-legend"><span>🟢 출석 ${present}회</span><span>⚪ 결석 ${absent}회</span><span>표시 없는 날은 미기록</span></div>`;
 }
 function tkdParentPromotion(x){
- const history=(db.promotionHistory||[]).filter(h=>Number(h.sid)===Number(x.id)).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const mainHistory=(db.promotionHistory||[]).filter(h=>Number(h.sid)===Number(x.id));
+ const profileHistory=tkdProfileLogs.get(String(x.id))||[];
+ const history=[...mainHistory];
+ for(const h of profileHistory){if(!history.some(a=>String(a.date||'')===String(h.date||'')&&String(a.before||'')===String(h.before||'')&&String(a.after||'')===String(h.after||'')))history.push(h);}
+ history.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  const rank=Number(x.rankLevel)>0?String(x.rankLevel)+(x.rankKind==='단'?'단':'품'):'미취득';
  const currentGrade=x.gradeLevel?String(x.gradeLevel)+'급':'미입력';
  return `<div class="card">${head('🌱 우리 아이 성장 기록')}<div class="tkd-parent-promo-highlight"><div class="tkd-parent-promo-icon">🌱</div><div><span class="muted mini">현재 성장 단계</span><h2>${esc(x.belt||'미입력')}</h2><p>${esc(currentGrade)} · ${esc(rank)}</p></div></div><div class="tkd-parent-promo-grid"><div class="tkd-parent-promo-item"><span>입관일</span><strong>${esc(x.joined||'미입력')}</strong></div><div class="tkd-parent-promo-item"><span>다음 승급 예정일</span><strong>${esc(nextGradeDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>다음 승품(단) 예정일</span><strong>${esc(nextRankDate(x))}</strong></div><div class="tkd-parent-promo-item"><span>최근 품·단 취득일</span><strong>${esc(x.rankAwarded||'미입력')}</strong></div></div>${history.length?`<h3 style="font-size:16px;margin:18px 0 10px">승급 기록</h3><div class="tkd-parent-timeline">${history.map(h=>`<div class="tkd-parent-timeline-item"><span class="tkd-timeline-belt">${tkdTimelineBeltIcon(h.after||h.before||'')}</span><div><b>${esc(h.detail?((h.after||'승급')+' · '+h.detail):(h.after||'승급'))}</b><p>${esc(h.date||'날짜 미입력')}${h.before?' · '+esc(h.before)+' → '+esc(h.after||''):''}</p></div></div>`).join('')}</div>`:''}<p class="muted mini" style="margin-top:15px">예정일은 수련기간을 기준으로 한 참고 날짜이며, 실제 심사 일정은 도장에 확인해 주세요.</p></div>`;
@@ -1078,7 +1096,7 @@ function parentView(){
  if(!x)return '<div class="card empty">연결된 자녀가 없습니다. 관장에게 초대 코드를 요청하세요.</div>';
  let chooser=linkedChildren().length>1?'<div class="tkd-parent-child-select"><select class="field" aria-label="자녀 선택" onchange="chooseChild(this.value)">'+linkedChildren().map(id=>{let c=student(id);return c?'<option value="'+id+'" '+(id===selectedChildId?'selected':'')+'>'+esc(c.name)+'</option>':''}).join('')+'</select></div>':'';
 
- if(page==='home')return `<div class="hero tkd-parent-hero-row"><div><h2>우리 아이의 성장 이야기 🌱</h2></div>${chooser||'<div class="heroemoji">👨‍👩‍👦</div>'}</div><div class="card parentcard" style="margin-bottom:15px"><div class="childicon">🥋</div><div><h2 style="margin:0">${esc(x.name)}</h2><div class="muted">${esc(x.className)} · ${esc(x.belt)}</div><span class="pill green">학부모 연결 완료</span></div></div><div class="grid metrics">${metricLink('📅',x.att+'/'+x.total,'최근 수련 출석','parentAttendance')}${metricLink('🌱',x.belt||'성장 중','우리 아이 성장 기록','growth')}${metricLink('💳',paidFor(x)?'완료':'미납','회비 납부 상태','parentDues')}${metricLink('📢','','공지사항','notices').replace('<span class="num"></span>','')}</div>`;
+ if(page==='home')return `<div class="hero tkd-parent-hero-row"><div><h2>우리 아이의 성장 이야기 🌱</h2></div>${chooser||'<div class="heroemoji">👨‍👩‍👦</div>'}</div><div class="card parentcard" style="margin-bottom:15px"><div class="childicon">🥋</div><div><h2 style="margin:0">${esc(x.name)}</h2><div class="muted">${esc(x.className)} · ${esc(x.belt)}</div><span class="pill green">학부모 연결 완료</span></div></div><div class="grid metrics">${metricLink('📅','','최근 수련 출석','parentAttendance').replace('<span class="num"></span>','')}${metricLink('🌱','','우리 아이 성장 기록','growth').replace('<span class="num"></span>','')}${metricLink('💳','','회비 납부 상태','parentDues').replace('<span class="num"></span>','')}${metricLink('📢','','공지사항','notices').replace('<span class="num"></span>','')}</div>`;
  if(page==='parentAttendance')return `<div class="card">${head('📅 '+esc(x.name)+' 관원 출석 내역')}${tkdParentCalendar(x)}<div style="margin-top:15px">${btn('홈으로 돌아가기',"navigate('home')",'sm secondary')}</div></div>`;
  if(page==='parentDues')return `<div class="card">${head('💳 '+esc(x.name)+' 관원 회비 내역')}<div class="notice"><span class="emoji">💳</span><div><b>이번 달 회비: ${paidFor(x)?'납부 완료':'미납'}</b><p>회비 관련 문의는 도장에 확인해 주세요.</p></div></div><div style="margin-top:15px">${btn('홈으로 돌아가기',"navigate('home')",'sm secondary')}</div></div>`;
  if(page==='growth')return tkdParentPromotion(x);
