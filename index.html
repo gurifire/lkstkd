@@ -1074,6 +1074,31 @@ async function setPaid(id,checked,input){
  try{
   await waiting;
   if(!tkdLastSaveOk)throw Error('회비 상태 저장 또는 학부모 조회 동기화 실패');
+  // 회비 저장 직후 서버 원본을 다시 확인하고, 연결된 학부모 조회 자료의 해당 월 납부 상태를 확정합니다.
+  // 기존 역할별 조회 동기화가 완료된 뒤 실행하여 이전 상태가 남는 것을 방지합니다.
+  const fs=firebase.firestore();
+  const mainSnap=await fs.doc('academyData/main').get();
+  if(!mainSnap.exists)throw Error('회비 원본 자료가 없습니다.');
+  const mainData=JSON.parse(mainSnap.data().payload||'{}');
+  if(mainData.dues?.[month]?.[id]!==checked)throw Error('회비 원본과 체크 상태가 일치하지 않습니다.');
+  const parentUsers=await fs.collection('users').where('role','==','parent').get();
+  for(const userDoc of parentUsers.docs){
+   const a=userDoc.data();
+   const ids=[a.sid,...(Array.isArray(a.childIds)?a.childIds:[])].filter(v=>v!=null).map(String);
+   if(!ids.includes(String(id)))continue;
+   const viewRef=fs.doc('parentViews/'+userDoc.id);
+   await fs.runTransaction(async tx=>{
+    const viewSnap=await tx.get(viewRef);
+    if(!viewSnap.exists)return;
+    const view=JSON.parse(viewSnap.data().payload||'{}');
+    if(!Array.isArray(view.students)||!view.students.some(c=>String(c.id)===String(id)))return;
+    view.dues??={};view.dues[month]??={};view.dues[month][id]=checked;
+    if(month===MONTH())for(const c of view.students)if(String(c.id)===String(id)){
+     c.paid=checked;c.paidMonth=month;
+    }
+    tx.update(viewRef,{payload:JSON.stringify(view),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+   });
+  }
   toast('월별 회비 상태 저장 완료');
  }catch(e){
   console.error('회비 상태 저장 실패',e);
