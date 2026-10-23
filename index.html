@@ -1193,7 +1193,22 @@ function tkdParentPromotion(x){
  const mainHistory=(db.promotionHistory||[]).filter(h=>Number(h.sid)===Number(x.id));
  const profileHistory=tkdProfileLogs.get(String(x.id))||[];
  const history=mainHistory.map((h,i)=>({...h,_order:i,_source:0}));
- for(const [i,h] of profileHistory.entries()){if(!history.some(a=>String(a.date||'')===String(h.date||'')&&String(a.before||'')===String(h.before||'')&&String(a.after||'')===String(h.after||'')&&String(a.detail||'')===String(h.detail||'')))history.push({...h,_order:i,_source:1});}
+ // 같은 날짜에 동일한 띠·급수를 반복 변경해도 서로 다른 저장 건은 모두 남깁니다.
+ // 관장 원본과 개별 관원 문서에 중복 저장된 *같은 이벤트*만 1:1로 병합합니다.
+ const matchedMain=new Set();
+ for(const [i,h] of profileHistory.entries()){
+  const timestamp=Number(h.createdAtMs||0);
+  const matchIndex=timestamp?history.findIndex((a,j)=>!matchedMain.has(j)&&a._source===0
+   &&Number(a.createdAtMs||0)>0&&Math.abs(Number(a.createdAtMs)-timestamp)<=2000
+   &&String(a.date||'')===String(h.date||'')
+   &&String(a.before||'')===String(h.before||'')
+   &&String(a.after||'')===String(h.after||'')
+   &&String(a.beforeGrade??'')===String(h.beforeGrade??'')
+   &&String(a.afterGrade??'')===String(h.afterGrade??'')
+   &&String(a.detail||'')===String(h.detail||'')):-1;
+  if(matchIndex>=0)matchedMain.add(matchIndex);
+  else history.push({...h,_order:i,_source:1});
+ }
  history.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(Number(b.createdAtMs||0)-Number(a.createdAtMs||0))||(b._source-a._source)||(b._order-a._order));
  const rank=Number(x.rankLevel)>0?String(x.rankLevel)+(x.rankKind==='단'?'단':'품'):'미취득';
  const currentGrade=x.gradeLevel?String(x.gradeLevel)+'급':'미입력';
