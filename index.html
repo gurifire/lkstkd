@@ -1057,7 +1057,53 @@ function updateDueDate(id,value){
  }
  save();render();toast('납부예정일 저장 완료');
 }
-async function setPaid(id,checked,input){if(role!=='owner')return;const x=student(id);if(!x)return;if(paidFor(x,duesMonth)===checked)return;db.dues[duesMonth]??={};db.dues[duesMonth][id]=checked;if(duesMonth===MONTH()){x.paid=checked;x.paidMonth=duesMonth;}save();const row=input?.closest('tr');const status=row?.querySelector('td:nth-child(4) .pill');if(status){status.textContent=checked?'납부 완료':'미납';status.classList.toggle('green',checked);status.classList.toggle('red',!checked);}input?.closest('.tkd-paid-check')?.classList.toggle('green',checked);await cloudWrite;if(tkdLastSaveOk)toast('월별 회비 상태 저장 완료');else{if(input)input.checked=!checked;toast('회비 저장에 실패했습니다. 다시 확인해 주세요.')}}async function togglePaid(id){if(role!=='owner')return;db.dues[duesMonth]??={};db.dues[duesMonth][id]=!paidFor(student(id),duesMonth);if(duesMonth===MONTH()){student(id).paid=db.dues[duesMonth][id];student(id).paidMonth=duesMonth;}save();render();await cloudWrite;if(tkdLastSaveOk)toast('월별 회비 상태 저장 완료')}
+async function setPaid(id,checked,input){
+ if(role!=='owner')return;
+ const x=student(id);if(!x)return;
+ // 저장 중 재클릭을 막고, 서버 반영 결과를 확인하기 전에는 다음 변경을 허용하지 않습니다.
+ if(input?.dataset.tkdPaidSaving==='1')return;
+ if(paidFor(x,duesMonth)===checked)return;
+ const month=duesMonth;
+ const before=Object.prototype.hasOwnProperty.call(db.dues?.[month]||{},String(id))?db.dues[month][id]:undefined;
+ const oldPaid=x.paid,oldPaidMonth=x.paidMonth;
+ if(input){input.dataset.tkdPaidSaving='1';input.disabled=true;}
+ db.dues[month]??={};db.dues[month][id]=checked;
+ if(month===MONTH()){x.paid=checked;x.paidMonth=month;}
+ save();
+ const waiting=cloudWrite;
+ try{
+  await waiting;
+  if(!tkdLastSaveOk)throw Error('회비 상태 저장 또는 학부모 조회 동기화 실패');
+  toast('월별 회비 상태 저장 완료');
+ }catch(e){
+  console.error('회비 상태 저장 실패',e);
+  // 실패 후 로컬 값만 남아 있으면 다음 클릭이 반대로 처리되므로 원상 복구합니다.
+  // 서버 쓰기는 성공했지만 학부모 조회 갱신만 실패한 경우에는 서버 값을 우선합니다.
+  try{
+   const snap=await firebase.firestore().doc('academyData/main').get();
+   if(snap.exists){
+    const server=JSON.parse(snap.data().payload||'{}');
+    if(Array.isArray(server.students)){
+     tkdServerPayload=snap.data().payload;
+     db=server;
+     tkdApplyAllProfiles();
+    }
+   }else{
+    if(before===undefined)delete db.dues[month][id];else db.dues[month][id]=before;
+    x.paid=oldPaid;x.paidMonth=oldPaidMonth;
+   }
+  }catch(readError){
+   console.error('회비 저장 실패 후 서버 상태 조회 실패',readError);
+   if(before===undefined)delete db.dues[month][id];else db.dues[month][id]=before;
+   x.paid=oldPaid;x.paidMonth=oldPaidMonth;
+  }
+  toast('회비 저장 또는 학부모 반영에 실패했습니다. 다시 확인해 주세요.');
+ }finally{
+  if(input){delete input.dataset.tkdPaidSaving;input.disabled=false;}
+  if(role==='owner'&&page==='dues')render();
+ }
+}
+async function togglePaid(id){if(role!=='owner')return;db.dues[duesMonth]??={};db.dues[duesMonth][id]=!paidFor(student(id),duesMonth);if(duesMonth===MONTH()){student(id).paid=db.dues[duesMonth][id];student(id).paidMonth=duesMonth;}save();render();await cloudWrite;if(tkdLastSaveOk)toast('월별 회비 상태 저장 완료')}
 function plusMonths(ymd,months){if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||''))return '';const [y,m,d]=ymd.split('-').map(Number);const base=new Date(Date.UTC(y,m-1+months,1));const last=new Date(Date.UTC(base.getUTCFullYear(),base.getUTCMonth()+1,0)).getUTCDate();base.setUTCDate(Math.min(d,last));return base.toISOString().slice(0,10)}
 function latestGrade(x){return (db.promotionHistory||[]).filter(h=>h.sid===x.id&&h.before!==h.after&&h.date).sort((a,b)=>b.date.localeCompare(a.date))[0]}
 function nextGradeDate(x){const h=latestGrade(x),d=x.lastPromotionDate||x.promotionDate||h?.date||x.joined;return /^\d{4}-\d{2}-\d{2}$/.test(d||'')?plusMonths(d,Number(d.slice(8,10))===1?1:2).slice(0,7)+'-01':'승급일 기록 필요'}
