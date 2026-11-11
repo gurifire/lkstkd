@@ -683,3 +683,13 @@ table input.field[type=date]{min-width:0!important;width:150px;padding:7px 9px;f
  .tkd-student-list tbody td.tkd-row-actions{order:5;flex:1 0 100%;display:flex;justify-content:flex-end;gap:6px;margin-top:4px}
  .tkd-student-list .tkd-status-action{min-height:34px;padding:0 16px!important;font-size:13px!important}
 }
+
+/* ===== v7.47 ===== */
+/* 폰 관원 카드: 긴 이름·긴 수련반명이 있어도 카드가 화면 밖으로 밀리지 않게 */
+@media(max-width:690px){
+ .tkd-student-list table,.tkd-student-list tbody{display:block!important;width:100%!important}
+ .tkd-student-list thead{display:block}
+ .tkd-student-list tbody td:nth-child(2){white-space:normal!important;overflow-wrap:anywhere}
+ .tkd-student-list tbody td:nth-child(2) .person{min-width:0}
+ .tkd-student-list tbody td[data-label]{white-space:normal!important;max-width:100%}
+}
