@@ -694,3 +694,24 @@ table input.field[type=date]{min-width:0!important;width:150px;padding:7px 9px;f
  .tkd-student-list tbody td:nth-child(2) .avatar{flex-shrink:0}
  .tkd-student-list tbody td[data-label]{white-space:normal!important;max-width:100%}
 }
+
+/* ===== v7.48 회비 연체 표시·운영 통계 회비 ===== */
+#view .owner-metrics .metric-link .num.tkd-two-line{white-space:pre-line;font-size:clamp(17px,2vw,22px)!important;line-height:1.2}
+#view .owner-metrics .metric-link .num.tkd-has-overdue{color:#d92838!important}
+.tkd-overdue-banner{margin:4px 0 14px;border:1px solid #f6c9cd!important;background:#fff6f6!important}
+.tkd-overdue-banner b{color:#c3283a}
+.tkd-overdue-banner.ok{border-color:#cdeedd!important;background:#f3fbf7!important}
+.tkd-overdue-banner.ok b{color:#0b7d55}
+.tkd-overdue-banner p{line-height:1.6}
+tr.tkd-overdue-row td{background:#fff7f7!important}
+.pill.tkd-dues-wait{background:#fff4e5!important;color:#a8661c!important}
+.pill.tkd-dues-nodate{background:#f1f3f7!important;color:#6b778c!important}
+.tkd-red{color:#d92838;font-weight:800}
+.tkd-overdue-names{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+@media(max-width:690px){
+ #view .owner-metrics .metric-link .num.tkd-two-line{font-size:clamp(15px,4.3vw,18px)!important;white-space:pre!important}
+}
+.tkd-dues-stats{overflow-x:auto}
+.tkd-dues-stats table{width:100%}
+.tkd-dues-stats th,.tkd-dues-stats td{text-align:center;white-space:nowrap;padding:10px 8px!important}
+.tkd-dues-stats th:first-child,.tkd-dues-stats td:first-child{text-align:left}
